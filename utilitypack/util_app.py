@@ -73,8 +73,8 @@ class BulletinApp:
         return foo
 
     @EasyWrapper
-    def Hotkey(foo, self: "BulletinApp", prompt, key, continiousPress=None):
-        print(f"{prompt:<20}{HotkeyManager.hotkeytask.getKeyRepr(key)}")
+    def Hotkey(foo, self: "BulletinApp", name, key, continiousPress=None):
+        print(f"{name:<20}{HotkeyManager.hotkeytask.getKeyRepr(key)}")
         self.hotkeytask.append(
             HotkeyManager.hotkeytask(key=key, foo=foo, continiousPress=continiousPress)
         )

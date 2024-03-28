@@ -648,10 +648,22 @@ class FSMUtil:
 
     class TokenTypeLike(enum.Enum): ...
 
-    @dataclasses.dataclass
     class TokenMatcher:
+        def tryMatch(self, s: str) -> typing.Union[None, "FSMUtil.Token"]: ...
+
+    @dataclasses.dataclass
+    class RegexpTokenMatcher(TokenMatcher):
         exp: str
         type: "FSMUtil.TokenTypeLike"
+
+        def __post_init__(self):
+            self.compiledExp = regex.compile(self.exp)
+
+        def tryMatch(self, s: str) -> "None | FSMUtil.Token":
+            match = regex.match(self.compiledExp, s)
+            if match is not None:
+                return FSMUtil.Token(self.type, match.group(0), 0, len(match.group(0)))
+            return None
 
     @dataclasses.dataclass(repr=True)
     class Token:
@@ -671,10 +683,14 @@ class FSMUtil:
     ) -> "FSMUtil.Token":
         si = s[i:]
         for m in matchers:
-            match = regex.match(m.exp, si)
-            if match is not None:
-                return FSMUtil.Token(m.type, match.group(0), i, i + len(match.group(0)))
-        raise FSMUtil.ParseError(f"unparseable token at {i}: {si[:10] if len(si) > 10 else si}")
+            token = m.tryMatch(si)
+            if token is not None:
+                token.start = i
+                token.end += i
+                return token
+        raise FSMUtil.ParseError(
+            f"unparseable token at {i}: {si[:10] if len(si) > 10 else si}"
+        )
 
 
 class expparser:
@@ -1037,27 +1053,29 @@ class expparser:
     def _NextToken(s, i=0):
 
         matcherList = [
-            FSMUtil.TokenMatcher(
+            FSMUtil.RegexpTokenMatcher(
                 exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=expparser._TokenType.OPR
             ),  # two width operator, match before single widthed ones to get priority
-            FSMUtil.TokenMatcher(
+            FSMUtil.RegexpTokenMatcher(
                 exp=r"^[*/+\-^=<>&|]", type=expparser._TokenType.OPR
             ),  # single width operator
-            FSMUtil.TokenMatcher(
+            FSMUtil.RegexpTokenMatcher(
                 exp=r"^[0-9]+(\.[0-9]+)?", type=expparser._TokenType.NUMLIKE
             ),
             # cant process r'"\\"' properly, but simply ignore it
-            FSMUtil.TokenMatcher(
+            FSMUtil.RegexpTokenMatcher(
                 exp=r'^".+?(?<!\\)"', type=expparser._TokenType.NUMLIKE
             ),
-            FSMUtil.TokenMatcher(
+            FSMUtil.RegexpTokenMatcher(
                 exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=expparser._TokenType.IDR
             ),
-            FSMUtil.TokenMatcher(exp=r"^\(", type=expparser._TokenType.BRA),
-            FSMUtil.TokenMatcher(exp=r"^\)", type=expparser._TokenType.KET),
-            FSMUtil.TokenMatcher(exp=r"^,", type=expparser._TokenType.COMMA),
-            FSMUtil.TokenMatcher(exp=r"^$", type=expparser._TokenType.EOF),
-            FSMUtil.TokenMatcher(exp=r"^[\s\r\n\t]+", type=expparser._TokenType.SPACE),
+            FSMUtil.RegexpTokenMatcher(exp=r"^\(", type=expparser._TokenType.BRA),
+            FSMUtil.RegexpTokenMatcher(exp=r"^\)", type=expparser._TokenType.KET),
+            FSMUtil.RegexpTokenMatcher(exp=r"^,", type=expparser._TokenType.COMMA),
+            FSMUtil.RegexpTokenMatcher(exp=r"^$", type=expparser._TokenType.EOF),
+            FSMUtil.RegexpTokenMatcher(
+                exp=r"^[\s\r\n\t]+", type=expparser._TokenType.SPACE
+            ),
         ]
 
         def getNextToken(s, i):

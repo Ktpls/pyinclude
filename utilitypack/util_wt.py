@@ -417,7 +417,7 @@ class Port8111:
 class Blkx:
 
     class FieldType(enum.Enum):
-        string = 0
+        text = 0
         real = 1
         integer = 2
         bool = 3
@@ -444,15 +444,15 @@ class Blkx:
             eof = 8
 
         matchers = [
-            FSMUtil.TokenMatcher(r"^[a-zA-Z_]{1}[a-zA-Z_0-9]*", _TokenType.identifier),
-            FSMUtil.TokenMatcher(r'^".*"', _TokenType.text),
-            FSMUtil.TokenMatcher(r"^(-)?\d+(\.\d+)", _TokenType.num),
-            FSMUtil.TokenMatcher(r"^{", _TokenType.bra),
-            FSMUtil.TokenMatcher(r"^}", _TokenType.ket),
-            FSMUtil.TokenMatcher(r"^:", _TokenType.colon),
-            FSMUtil.TokenMatcher(r"^=", _TokenType.eq),
-            FSMUtil.TokenMatcher(r"^\s+", _TokenType.blank),
-            FSMUtil.TokenMatcher(r"^$", _TokenType.eof),
+            FSMUtil.RegexpTokenMatcher(r"^[a-zA-Z_]{1}[a-zA-Z_0-9]*", _TokenType.identifier),
+            FSMUtil.RegexpTokenMatcher(r'^".*"', _TokenType.text),
+            FSMUtil.RegexpTokenMatcher(r"^(-)?\d+(\.\d+)", _TokenType.num),
+            FSMUtil.RegexpTokenMatcher(r"^{", _TokenType.bra),
+            FSMUtil.RegexpTokenMatcher(r"^}", _TokenType.ket),
+            FSMUtil.RegexpTokenMatcher(r"^:", _TokenType.colon),
+            FSMUtil.RegexpTokenMatcher(r"^=", _TokenType.eq),
+            FSMUtil.RegexpTokenMatcher(r"^\s+", _TokenType.blank),
+            FSMUtil.RegexpTokenMatcher(r"^$", _TokenType.eof),
         ]
 
         class _FSMNode(enum.Enum):
@@ -525,7 +525,7 @@ class Blkx:
                 elif node == Blkx._BlkxParser._FSMNode.colon:
                     if token.type == Blkx._BlkxParser._TokenType.identifier:
                         if token.value == "t":
-                            curField.type = Blkx.FieldType.string
+                            curField.type = Blkx.FieldType.text
                         elif token.value == "r":
                             curField.type = Blkx.FieldType.real
                         elif token.value == "i":
@@ -551,7 +551,7 @@ class Blkx:
                         value = None
                         if token.type == Blkx._BlkxParser._TokenType.text:
                             # del quotes
-                            assert curField.type == Blkx.FieldType.string
+                            assert curField.type == Blkx.FieldType.text
                             value = token.value[1:-1]
                         elif token.type == Blkx._BlkxParser._TokenType.num:
                             assert curField.type in (
