@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from time import sleep
 import copy
 import ctypes
 import dataclasses
@@ -13,6 +12,7 @@ import multiprocessing
 import os
 import random
 import re
+import regex
 import sys
 import threading
 import time
@@ -53,11 +53,11 @@ def Deduplicate(l: list):
     return list(set(l))
 
 
-def Flatten(iterable):
-    result = []
+def ArrayFlatten(iterable, iterableType: tuple[type] = (list, tuple)):
+    result = list()
     for item in iterable:
-        if isinstance(item, (list, tuple)):
-            result.extend(Flatten(item))
+        if isinstance(item, iterableType):
+            result.extend(ArrayFlatten(item))
         else:
             result.append(item)
     return result
@@ -74,6 +74,7 @@ def Numinstr(s: str):
 
 
 def FunctionalWrapper(f: typing.Callable) -> typing.Callable:
+    @functools.wraps(f)
     def f2(self, *args, **kwargs):
         f(self, *args, **kwargs)
         return self
@@ -476,8 +477,7 @@ def ReadFile(path):
         return f.read()
 
 
-def EnsureDirectoryExists(file_path):
-    directory = os.path.dirname(file_path)
+def EnsureDirectoryExists(directory):
     if len(directory) == 0:
         return
     if not os.path.exists(directory):
@@ -485,13 +485,13 @@ def EnsureDirectoryExists(file_path):
 
 
 def WriteFile(path, content):
-    EnsureDirectoryExists(path)
+    EnsureDirectoryExists(os.path.dirname(path))
     with open(path, "wb+") as f:
         f.write(content)
 
 
 def AppendFile(path, content):
-    EnsureDirectoryExists(path)
+    EnsureDirectoryExists(os.path.dirname(path))
     with open(path, "ab+") as f:
         f.write(content.encode("utf-8"))
 
@@ -520,9 +520,9 @@ class Pipe:
             print(self.value)
         return self
 
+    @FunctionalWrapper
     def do(self, foo: typing.Callable[[typing.Any], typing.Any]) -> "Pipe":
         self.set(foo(self.get()))
-        return self
 
     def __repr__(self) -> str:
         return self.get().__repr__()
@@ -638,6 +638,43 @@ class Progress:
 
     def setFinish(self):
         self.update(self.total)
+        print("")
+        print("finished")
+
+
+class FSMUtil:
+
+    class ParseError(Exception): ...
+
+    class TokenTypeLike(enum.Enum): ...
+
+    @dataclasses.dataclass
+    class TokenMatcher:
+        exp: str
+        type: "FSMUtil.TokenTypeLike"
+
+    @dataclasses.dataclass(repr=True)
+    class Token:
+        type: "FSMUtil.TokenTypeLike"
+        value: typing.Any
+        start: int
+        end: int
+
+        def Unexpected(self):
+            raise FSMUtil.ParseError(
+                f"unexpected token {self.value}:{self.type} at {self.start}-{self.end}"
+            )
+
+    @staticmethod
+    def getToken(
+        s: str, i: int, matchers: list["FSMUtil.TokenMatcher"]
+    ) -> "FSMUtil.Token":
+        si = s[i:]
+        for m in matchers:
+            match = regex.match(m.exp, si)
+            if match is not None:
+                return FSMUtil.Token(m.type, match.group(0), i, i + len(match.group(0)))
+        raise FSMUtil.ParseError(f"unparseable token at {i}: {si[:10] if len(si) > 10 else si}")
 
 
 class expparser:
@@ -718,7 +755,7 @@ class expparser:
                     child = ""
             return tipe + val + child
 
-    class TokenType(enum.Enum):
+    class _TokenType(enum.Enum):
         NUMLIKE = 1
         OPR = 2
         BRA = 3
@@ -728,14 +765,7 @@ class expparser:
         SPACE = 7
         COMMA = 8
 
-    @dataclasses.dataclass(repr=True)
-    class Token:
-        type: "expparser.TokenType"
-        value: typing.Any
-        start: int
-        end: int
-
-    class __State(enum.Enum):
+    class _State(enum.Enum):
         START = 1
         NUM = 2
         NEG = 3
@@ -744,12 +774,12 @@ class expparser:
         IDR = 6
 
     @dataclasses.dataclass
-    class __OprPriorityLeap:
+    class _OprPriorityLeap:
         pos: int
         pribefore: int
         priafter: int
 
-    class NumLikeUnionUtil:
+    class _NumLikeUnionUtil:
         class NumLikeException(Exception):
             pass
 
@@ -763,54 +793,54 @@ class expparser:
         @staticmethod
         def TypeOf(nl):
             if isinstance(nl, str):
-                return expparser.NumLikeUnionUtil.NumLikeType.STR
+                return expparser._NumLikeUnionUtil.NumLikeType.STR
             elif isinstance(nl, typing.Iterable):
-                return expparser.NumLikeUnionUtil.NumLikeType.LIST
+                return expparser._NumLikeUnionUtil.NumLikeType.LIST
             elif isinstance(nl, float):
-                return expparser.NumLikeUnionUtil.NumLikeType.NUM
+                return expparser._NumLikeUnionUtil.NumLikeType.NUM
             elif isinstance(nl, bool):
-                return expparser.NumLikeUnionUtil.NumLikeType.BOOL
+                return expparser._NumLikeUnionUtil.NumLikeType.BOOL
             elif nl is None:
-                return expparser.NumLikeUnionUtil.NumLikeType.NONE
+                return expparser._NumLikeUnionUtil.NumLikeType.NONE
             else:
-                raise expparser.NumLikeUnionUtil.NumLikeException()
+                raise expparser._NumLikeUnionUtil.NumLikeException()
 
         # imexplicit conversion
         @staticmethod
         def ToNum(nl):
-            t = expparser.NumLikeUnionUtil.TypeOf(nl)
-            if t == expparser.NumLikeUnionUtil.NumLikeType.NUM:
+            t = expparser._NumLikeUnionUtil.TypeOf(nl)
+            if t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
                 return nl
-            elif t == expparser.NumLikeUnionUtil.NumLikeType.BOOL:
+            elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
                 return 1.0 if nl else 0.0
             else:
-                raise expparser.NumLikeUnionUtil.NumLikeException()
+                raise expparser._NumLikeUnionUtil.NumLikeException()
 
         @staticmethod
         def ToList(nl):
-            t = expparser.NumLikeUnionUtil.TypeOf(nl)
-            if t == expparser.NumLikeUnionUtil.NumLikeType.LIST:
+            t = expparser._NumLikeUnionUtil.TypeOf(nl)
+            if t == expparser._NumLikeUnionUtil.NumLikeType.LIST:
                 return list(nl)
-            elif t == expparser.NumLikeUnionUtil.NumLikeType.STR:
+            elif t == expparser._NumLikeUnionUtil.NumLikeType.STR:
                 return [nl]
-            elif t == expparser.NumLikeUnionUtil.NumLikeType.NUM:
+            elif t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
                 return [nl]
-            elif t == expparser.NumLikeUnionUtil.NumLikeType.BOOL:
+            elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
                 return [nl]
-            elif t == expparser.NumLikeUnionUtil.NumLikeType.NONE:
+            elif t == expparser._NumLikeUnionUtil.NumLikeType.NONE:
                 return [nl]
             else:
-                raise expparser.NumLikeUnionUtil.NumLikeException()
+                raise expparser._NumLikeUnionUtil.NumLikeException()
 
         @staticmethod
         def ToBool(nl):
-            t = expparser.NumLikeUnionUtil.TypeOf(nl)
-            if t == expparser.NumLikeUnionUtil.NumLikeType.NUM:
+            t = expparser._NumLikeUnionUtil.TypeOf(nl)
+            if t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
                 return nl > 0
-            elif t == expparser.NumLikeUnionUtil.NumLikeType.BOOL:
+            elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
                 return nl
             else:
-                raise expparser.NumLikeUnionUtil.NumLikeException()
+                raise expparser._NumLikeUnionUtil.NumLikeException()
 
         @staticmethod
         def ToProperFormFromAny(nl):
@@ -831,17 +861,17 @@ class expparser:
             elif nl is None:
                 return nl
             else:
-                raise expparser.NumLikeUnionUtil.NumLikeException()
+                raise expparser._NumLikeUnionUtil.NumLikeException()
 
-    class ParseException(Exception):
+    class _ParseException(Exception):
         pass
 
     @staticmethod
     def unpackParaArray(f):
         def f2(a):
             if (
-                expparser.NumLikeUnionUtil.TypeOf(a)
-                == expparser.NumLikeUnionUtil.NumLikeType.LIST
+                expparser._NumLikeUnionUtil.TypeOf(a)
+                == expparser._NumLikeUnionUtil.NumLikeType.LIST
             ):
                 return f(*a)
             else:
@@ -852,14 +882,14 @@ class expparser:
     @staticmethod
     def CList(a):
         if (
-            expparser.NumLikeUnionUtil.TypeOf(a)
-            == expparser.NumLikeUnionUtil.NumLikeType.LIST
+            expparser._NumLikeUnionUtil.TypeOf(a)
+            == expparser._NumLikeUnionUtil.NumLikeType.LIST
         ):
             return a
         else:
             return [a]
 
-    class OprException(Exception):
+    class _OprException(Exception):
         pass
 
     class _OprType(enum.Enum):
@@ -882,8 +912,8 @@ class expparser:
         XOR = 17
 
         @staticmethod
-        def __throw_opr_exception(s):
-            raise expparser.OprException(f"bad opr {s}")
+        def throw_opr_exception(s):
+            raise expparser._OprException(f"bad opr {s}")
 
         def getPriority(self):
             if self in [
@@ -911,7 +941,7 @@ class expparser:
                 # unaries
                 return 99
             else:
-                expparser._OprType.__throw_opr_exception(self)
+                expparser._OprType.throw_opr_exception(self)
 
         @staticmethod
         def fromStr(s):
@@ -933,185 +963,165 @@ class expparser:
                 "^^": expparser._OprType.XOR,
             }
             if s not in dict:
-                expparser._OprType.__throw_opr_exception(s)
+                expparser._OprType.throw_opr_exception(s)
             return dict[s]
 
         def do(self, arg):
             if self == expparser._OprType.ADD:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) + expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) + expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.SUB:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) - expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) - expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.MUL:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) * expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) * expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.DIV:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) / expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) / expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.POW:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) ** expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) ** expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.NEG:
-                return -expparser.NumLikeUnionUtil.ToNum(arg[0])
+                return -expparser._NumLikeUnionUtil.ToNum(arg[0])
             elif self == expparser._OprType.NEQ:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) != expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) != expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.EQ:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) == expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) == expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.GT:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) > expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) > expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.GE:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) >= expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) >= expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.LT:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) < expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) < expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.LE:
-                return expparser.NumLikeUnionUtil.ToNum(
+                return expparser._NumLikeUnionUtil.ToNum(
                     arg[0]
-                ) <= expparser.NumLikeUnionUtil.ToNum(arg[1])
+                ) <= expparser._NumLikeUnionUtil.ToNum(arg[1])
             elif self == expparser._OprType.NOT:
-                return not expparser.NumLikeUnionUtil.ToBool(arg[0])
+                return not expparser._NumLikeUnionUtil.ToBool(arg[0])
             elif self == expparser._OprType.AND:
-                return expparser.NumLikeUnionUtil.ToBool(
+                return expparser._NumLikeUnionUtil.ToBool(
                     arg[0]
-                ) and expparser.NumLikeUnionUtil.ToBool(arg[1])
+                ) and expparser._NumLikeUnionUtil.ToBool(arg[1])
             elif self == expparser._OprType.OR:
-                return expparser.NumLikeUnionUtil.ToBool(
+                return expparser._NumLikeUnionUtil.ToBool(
                     arg[0]
-                ) or expparser.NumLikeUnionUtil.ToBool(arg[1])
+                ) or expparser._NumLikeUnionUtil.ToBool(arg[1])
             elif self == expparser._OprType.XOR:
-                return expparser.NumLikeUnionUtil.ToBool(
+                return expparser._NumLikeUnionUtil.ToBool(
                     arg[0]
-                ) ^ expparser.NumLikeUnionUtil.ToBool(arg[1])
+                ) ^ expparser._NumLikeUnionUtil.ToBool(arg[1])
             else:
-                expparser._OprType.__throw_opr_exception(self)
+                expparser._OprType.throw_opr_exception(self)
 
         def isUnary(self):
             return self in [expparser._OprType.NEG, expparser._OprType.NOT]
 
     @staticmethod
-    def __NextToken(s, i=0):
-        @dataclasses.dataclass
-        class matcher:
-            exp: str
-            tokenType: expparser.TokenType
-
-            def tryMatch(self, s, i):
-                match = re.match(self.exp, s[i:])
-                if not match:
-                    return None
-                end = match.span()[1] + i
-                return expparser.Token(self.tokenType, s[i:end], i, end)
+    def _NextToken(s, i=0):
 
         matcherList = [
-            matcher(
-                exp=r"^(<=)|(>=)|(\^\^)|(!=)", tokenType=expparser.TokenType.OPR
+            FSMUtil.TokenMatcher(
+                exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=expparser._TokenType.OPR
             ),  # two width operator, match before single widthed ones to get priority
-            matcher(
-                exp=r"^[*/+\-^=<>&|]", tokenType=expparser.TokenType.OPR
+            FSMUtil.TokenMatcher(
+                exp=r"^[*/+\-^=<>&|]", type=expparser._TokenType.OPR
             ),  # single width operator
-            matcher(exp=r"^[0-9]+(\.[0-9]+)?", tokenType=expparser.TokenType.NUMLIKE),
-            matcher(exp=r'^".*?"', tokenType=expparser.TokenType.NUMLIKE),
-            matcher(exp=r"^[A-Za-z_][A-Za-z0-9_]*", tokenType=expparser.TokenType.IDR),
-            matcher(exp=r"^\(", tokenType=expparser.TokenType.BRA),
-            matcher(exp=r"^\)", tokenType=expparser.TokenType.KET),
-            matcher(exp=r"^,", tokenType=expparser.TokenType.COMMA),
-            matcher(exp=r"^$", tokenType=expparser.TokenType.EOF),
-            matcher(exp=r"^[\s\r\n\t]+", tokenType=expparser.TokenType.SPACE),
+            FSMUtil.TokenMatcher(
+                exp=r"^[0-9]+(\.[0-9]+)?", type=expparser._TokenType.NUMLIKE
+            ),
+            # cant process r'"\\"' properly, but simply ignore it
+            FSMUtil.TokenMatcher(
+                exp=r'^".+?(?<!\\)"', type=expparser._TokenType.NUMLIKE
+            ),
+            FSMUtil.TokenMatcher(
+                exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=expparser._TokenType.IDR
+            ),
+            FSMUtil.TokenMatcher(exp=r"^\(", type=expparser._TokenType.BRA),
+            FSMUtil.TokenMatcher(exp=r"^\)", type=expparser._TokenType.KET),
+            FSMUtil.TokenMatcher(exp=r"^,", type=expparser._TokenType.COMMA),
+            FSMUtil.TokenMatcher(exp=r"^$", type=expparser._TokenType.EOF),
+            FSMUtil.TokenMatcher(exp=r"^[\s\r\n\t]+", type=expparser._TokenType.SPACE),
         ]
 
         def getNextToken(s, i):
-            for m in matcherList:
-                ret = m.tryMatch(s, i)
-                if ret:
-                    if ret.type == expparser.TokenType.NUMLIKE:
-                        # here is only num and str without other numlike types
-                        if len(ret.value) >= 2 and ret.value[0] == '"':
-                            # hardest case is "the \" string"
-                            # its string
-                            strstart = ret.start
-                            strbuffer = ""
-                            while True:
-                                if len(ret.value) > 2 and ret.value[-2] == "\\":
-                                    # cancel the former " and \, add " back
-                                    strbuffer += ret.value[1:-2] + '"'
-                                    # move on to the next section
-                                    # m == matcher[the str one] now
-                                    ret = m.tryMatch(s, ret.end - 1)
-                                else:
-                                    strbuffer += ret.value[1:-1]
-                                    break
-                            ret.start = strstart
-                            ret.value = strbuffer
-                        else:
-                            ret.value = float(ret.value)
-                    elif ret.type == expparser.TokenType.OPR:
-                        ret.value = expparser._OprType.fromStr(ret.value)
-                    elif ret.type == expparser.TokenType.SPACE:
-                        return getNextToken(s, ret.end)
-                    return ret
-            raise expparser.ParseException(f"unexpected token at {i}")
+            ret = FSMUtil.getToken(s, i, matcherList)
+            if ret.type == expparser._TokenType.NUMLIKE:
+                # here is only num and str without other numlike types
+                if len(ret.value) >= 2 and ret.value[0] == '"':
+                    # is str
+                    ret.start = ret.start
+                    ret.value = ret.value[1:-1].replace(r"\"", '"')
+                else:
+                    ret.value = float(ret.value)
+            elif ret.type == expparser._TokenType.OPR:
+                ret.value = expparser._OprType.fromStr(ret.value)
+            elif ret.type == expparser._TokenType.SPACE:
+                return getNextToken(s, ret.end)
+            return ret
 
         return getNextToken(s, i)
 
     @dataclasses.dataclass
-    class __ExpParserResult:
+    class _ExpParserResult:
         val: typing.Any
         end: int
-        endedby: "expparser.TokenType"
+        endedby: "expparser._TokenType"
 
     @staticmethod
-    def __expparse_recursive__comma_collector_wrapper(s, i=0):
-        nextval = expparser.__expparse_recursive(s, i)
-        if nextval.endedby == expparser.TokenType.COMMA:
+    def _expparse_recursive__comma_collector_wrapper(s, i=0):
+        nextval = expparser._expparse_recursive(s, i)
+        if nextval.endedby == expparser._TokenType.COMMA:
             vallist = [nextval.val]
             while True:
-                nextval = expparser.__expparse_recursive(s, nextval.end)
+                nextval = expparser._expparse_recursive(s, nextval.end)
                 vallist.append(nextval.val)
-                if nextval.endedby != expparser.TokenType.COMMA:
+                if nextval.endedby != expparser._TokenType.COMMA:
                     break
             retval = expparser.evaluator.ofList(vallist)
         else:
             retval = (
                 nextval.val
             )  # should be converted into evaluator by expparse_recursive
-        return expparser.__ExpParserResult(
+        return expparser._ExpParserResult(
             val=retval, end=nextval.end, endedby=nextval.endedby
         )
 
     @staticmethod
-    def __expparse_recursive(
+    def _expparse_recursive(
         s,
         startPos=0,
     ):
         # fsm fields
-        state = expparser.__State.START
-        token: expparser.Token = None
+        state = expparser._State.START
+        token: FSMUtil.Token = None
         # never modify peekToken
-        peekToken = expparser.__NextToken(s, startPos)
+        peekToken = expparser._NextToken(s, startPos)
 
         # buffer
-        tokenList: list[expparser.Token] = list()
+        tokenList: list[FSMUtil.Token] = list()
 
         # for operator priority
-        oprRisingBeginPosList: list[expparser.__OprPriorityLeap] = list()
+        oprRisingBeginPosList: list[expparser._OprPriorityLeap] = list()
 
-        def RaiseTokenException(token: expparser.Token):
-            raise expparser.ParseException(
+        def RaiseTokenException(token: FSMUtil.Token):
+            raise expparser._ParseException(
                 f'unexpected {token.type}("{token.value}") at {token.start}'
             )
 
@@ -1125,15 +1135,15 @@ class expparser:
                 if len(section) == 1:
                     break
                 val2 = section.pop()
-                assert val2.type == expparser.TokenType.NUMLIKE
+                assert val2.type == expparser._TokenType.NUMLIKE
                 opr = section.pop()
-                assert opr.type == expparser.TokenType.OPR
+                assert opr.type == expparser._TokenType.OPR
                 if opr.value.isUnary():
                     val2.value = expparser.evaluator.ofOpr(opr.value, [val2.value])
                     section.append(val2)
                 else:
                     val1 = section.pop()
-                    assert val1.type == expparser.TokenType.NUMLIKE
+                    assert val1.type == expparser._TokenType.NUMLIKE
                     val1.value = expparser.evaluator.ofOpr(
                         opr.value, [val1.value, val2.value]
                     )
@@ -1143,45 +1153,45 @@ class expparser:
             oprRisingBeginPosList.pop()
 
         def AddNewVirtualTokenValuedByCalculation(
-            subresult: expparser.__ExpParserResult,
+            subresult: expparser._ExpParserResult,
         ):
             nonlocal token, peekToken, state, tokenList
             tokenList.append(
-                expparser.Token(
-                    expparser.TokenType.NUMLIKE,
+                FSMUtil.Token(
+                    expparser._TokenType.NUMLIKE,
                     subresult.val,
                     token.start,
                     subresult.end,
                 )
             )
             RemapToken()
-            peekToken = expparser.__NextToken(s, subresult.end)
+            peekToken = expparser._NextToken(s, subresult.end)
 
         def DealWithBra():
             nonlocal token, peekToken, state, tokenList
-            if peekToken.type == expparser.TokenType.KET:
+            if peekToken.type == expparser._TokenType.KET:
                 """
                 one empty list
                 cant eval with expparse recursive,
                 cuz it returns with None if start follows by eof instantly
                 in this case () can be confused with List(None)
                 """
-                subresult = expparser.__ExpParserResult(
+                subresult = expparser._ExpParserResult(
                     expparser.evaluator.ofList([]),
                     peekToken.end,
-                    expparser.TokenType.KET,
+                    expparser._TokenType.KET,
                 )
             else:
-                subresult = expparser.__expparse_recursive__comma_collector_wrapper(
+                subresult = expparser._expparse_recursive__comma_collector_wrapper(
                     s, token.end
                 )
             tokenList.pop()  # remove the bra
             AddNewVirtualTokenValuedByCalculation(subresult)
-            state = expparser.__State.NUM
+            state = expparser._State.NUM
 
         def DealWithIdentifier():
             nonlocal token, peekToken, state, tokenList
-            if peekToken.type == expparser.TokenType.BRA:
+            if peekToken.type == expparser._TokenType.BRA:
                 # its a call
                 fooName = token.value
                 # manually move on
@@ -1204,13 +1214,13 @@ class expparser:
                 # its a var
                 # overwrite the identifier with num
                 token.value = expparser.evaluator.ofVar(token.value)
-                token.type = expparser.TokenType.NUMLIKE
-            state = expparser.__State.NUM
+                token.type = expparser._TokenType.NUMLIKE
+            state = expparser._State.NUM
 
         def MoveForwardToNextToken():
             nonlocal token, peekToken, tokenList
             token = peekToken
-            peekToken = expparser.__NextToken(s, token.end)
+            peekToken = expparser._NextToken(s, token.end)
             tokenList.append(token)
             # RemapToken() # not essential here
             # modifying token also applies on tokenList[-1]
@@ -1226,7 +1236,7 @@ class expparser:
 
         def doWhenReadNewOpr():
             nonlocal state, oprRisingBeginPosList, token, tokenList
-            state = expparser.__State.OPR
+            state = expparser._State.OPR
             lastOprPrior = (
                 oprRisingBeginPosList[-1].priafter
                 if len(oprRisingBeginPosList) > 0
@@ -1235,7 +1245,7 @@ class expparser:
             opr = token.value.getPriority()
             if opr > lastOprPrior:
                 oprRisingBeginPosList.append(
-                    expparser.__OprPriorityLeap(len(tokenList) - 1, lastOprPrior, opr)
+                    expparser._OprPriorityLeap(len(tokenList) - 1, lastOprPrior, opr)
                 )  # len(tokenList) - 1 for opr
             elif opr < lastOprPrior:
                 while True:
@@ -1263,7 +1273,7 @@ class expparser:
                 if opr > lastOprPrior:
                     # new opr is the new rising
                     oprRisingBeginPosList.append(
-                        expparser.__OprPriorityLeap(
+                        expparser._OprPriorityLeap(
                             len(tokenList) - 1,
                             lastOprPrior,
                             opr,
@@ -1293,21 +1303,21 @@ class expparser:
                         len(tokenList),
                     )
                 val = tokenList[-1].value
-            return expparser.__ExpParserResult(val, expendpos, endtype)
+            return expparser._ExpParserResult(val, expendpos, endtype)
 
         # the fsm illustrated in notebook
         while True:
             MoveForwardToNextToken()
-            if state == expparser.__State.START or state == expparser.__State.OPR:
+            if state == expparser._State.START or state == expparser._State.OPR:
                 # expecting numlike, but possible to meet bra, identifier, or unary operator, eof, comma, ket
-                if token.type == expparser.TokenType.BRA:
+                if token.type == expparser._TokenType.BRA:
                     DealWithBra()
-                elif token.type == expparser.TokenType.NUMLIKE:
+                elif token.type == expparser._TokenType.NUMLIKE:
                     token.value = expparser.evaluator.ofLiteral(token.value)
-                    state = expparser.__State.NUM
-                elif token.type == expparser.TokenType.IDR:
+                    state = expparser._State.NUM
+                elif token.type == expparser._TokenType.IDR:
                     DealWithIdentifier()
-                elif token.type == expparser.TokenType.OPR:
+                elif token.type == expparser._TokenType.OPR:
                     # maybe unary operator
                     if token.value == expparser._OprType.SUB:
                         # to neg
@@ -1316,48 +1326,48 @@ class expparser:
                         RaiseTokenException(token)
                     doWhenReadNewOpr()
                 elif token.type in [
-                    expparser.TokenType.EOF,
-                    expparser.TokenType.KET,
-                    expparser.TokenType.COMMA,
+                    expparser._TokenType.EOF,
+                    expparser._TokenType.KET,
+                    expparser._TokenType.COMMA,
                 ]:
                     # return
-                    state = expparser.__State.END
+                    state = expparser._State.END
                     return dealWithExpressionEndSign()
                 else:
                     RaiseTokenException(token)
-            elif state == expparser.__State.NUM:
-                if token.type == expparser.TokenType.OPR:
+            elif state == expparser._State.NUM:
+                if token.type == expparser._TokenType.OPR:
                     doWhenReadNewOpr()
                 elif token.type in [
-                    expparser.TokenType.EOF,
-                    expparser.TokenType.KET,
-                    expparser.TokenType.COMMA,
+                    expparser._TokenType.EOF,
+                    expparser._TokenType.KET,
+                    expparser._TokenType.COMMA,
                 ]:
                     # return
-                    state = expparser.__State.END
+                    state = expparser._State.END
                     return dealWithExpressionEndSign()
                 else:
                     RaiseTokenException(token)
-            elif state == expparser.__State.END:
+            elif state == expparser._State.END:
                 RaiseTokenException(token)
 
     @staticmethod
     def elementparse(s):
         i = 0
-        tokenList: list[expparser.Token] = []
+        tokenList: list[FSMUtil.Token] = []
         while True:
-            token = expparser.__NextToken(s, i)
+            token = expparser._NextToken(s, i)
             tokenList.append(token)
             i = token.end
-            if token.type == expparser.TokenType.EOF:
+            if token.type == expparser._TokenType.EOF:
                 break
         var = []
         func = []
         for i, tk in enumerate(tokenList):
-            if tk.type == expparser.TokenType.IDR:
+            if tk.type == expparser._TokenType.IDR:
                 # peek
                 # wont index overflow cuz there is eof and eof is not identifier
-                if tokenList[i + 1].type == expparser.TokenType.BRA:
+                if tokenList[i + 1].type == expparser._TokenType.BRA:
                     func.append(tk.value)
                 else:
                     var.append(tk.value)
@@ -1365,13 +1375,13 @@ class expparser:
 
     @staticmethod
     def expparse(s, var=dict(), func=dict()):
-        return expparser.__expparse_recursive__comma_collector_wrapper(s).val.eval(
+        return expparser._expparse_recursive__comma_collector_wrapper(s).val.eval(
             var, func
         )
 
     @staticmethod
     def compile(s):
-        return expparser.__expparse_recursive__comma_collector_wrapper(s).val
+        return expparser._expparse_recursive__comma_collector_wrapper(s).val
 
     class Utils:
         class NonOptionalException(Exception):
@@ -1416,7 +1426,7 @@ class expparser:
         "floor": math.floor,
         "ceil": math.ceil,
         "neg": lambda x: -x,
-        "iif": lambda cond, x, y: x if expparser.NumLikeUnionUtil.ToBool(cond) else y,
+        "iif": lambda cond, x, y: x if expparser._NumLikeUnionUtil.ToBool(cond) else y,
         "eq": lambda x, y, ep=0.001: abs(x - y) < ep,
         "StrEq": lambda x, y: x == y,
         "CStr": str,
@@ -1537,7 +1547,7 @@ def PreciseSleep(t):
     # to my suprise time.sleep() is quite precise
     if t > 0.0005773010000120849:
         # too rough
-        sleep(t)
+        time.sleep(t)
     else:
         CostlySleep(t)
 
@@ -1974,13 +1984,22 @@ def FlipCoin() -> bool:
 @EasyWrapper
 def Singleton(cls):
     cls.__singleton_instance__ = None
+    cls.__singleton_instance_inited__ = False
+    oldNew = cls.__new__
+    oldInit = cls.__init__
 
-    def fooNew(cls):
+    def newNew(cls):
         if cls.__singleton_instance__ is None:
-            cls.__singleton_instance__ = object.__new__(cls)
+            cls.__singleton_instance__ = oldNew(cls)
         return cls.__singleton_instance__
 
-    cls.__new__ = fooNew
+    def newInit(self, *args, **kwargs):
+        if not self.__class__.__singleton_instance_inited__:
+            oldInit(self.__class__.__singleton_instance__, *args, **kwargs)
+            self.__class__.__singleton_instance_inited__ = True
+
+    cls.__new__ = newNew
+    cls.__init__ = newInit
     return cls
 
 
@@ -2014,7 +2033,7 @@ class AnnotationUtil:
     @staticmethod
     def getAnnotations(obj):
         if AnnotationUtil.__checkAnnoNonexisted(obj):
-            return dict()
+            return DictAsAnObject(dict())
         return DictAsAnObject(obj.__ExtraAnnotations__)
 
 
@@ -2074,3 +2093,31 @@ def AllPartsOfFilePath(path: str):
     dir = os.path.dirname(path)
     filename, ext = os.path.splitext(os.path.basename(path))
     return dir, filename, ext
+
+
+def Decode(*args):
+    assert len(args) % 2 == 1
+    i = 0
+    while True:
+        if i + 1 >= len(args):
+            # the default
+            return args[i]
+        cond, val = args[i], args[i + 1]
+        if isinstance(cond, bool):
+            if cond:
+                return val
+        elif isinstance(cond, callable):
+            if len(inspect.signature(cond).parameters) == 0:
+                if cond():
+                    return val
+            else:
+                if cond(val):
+                    return val
+        i += 2
+
+
+def Coalesce(*args):
+    for arg in args:
+        if arg is not None:
+            return arg
+    return None

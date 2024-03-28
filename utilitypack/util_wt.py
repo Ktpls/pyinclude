@@ -157,6 +157,7 @@ class Port8111:
         supercharger: float = None
         radiator: float = None
         oil_radiator_indicator: float = None
+        oil_radiator_lever: float = None
         oil_radiator_lever1_1: float = None
         radiator_indicator: float = None
         radiator_lever1_1: float = None
@@ -221,6 +222,7 @@ class Port8111:
             pitch: "Port8111.BeanState.UnitValue" = None
             thrust: "Port8111.BeanState.UnitValue" = None
             efficiency: "Port8111.BeanState.UnitValue" = None
+            water_temp: "Port8111.BeanState.UnitValue" = None
 
         valid: bool = None
         aileron: UnitValue = None
@@ -307,6 +309,7 @@ class Port8111:
                     pitch=aircraft_fields.get("pitch", None),
                     thrust=aircraft_fields.get("thrust", None),
                     efficiency=aircraft_fields.get("efficiency", None),
+                    water_temp=aircraft_fields.get("water temp", None),
                 )
 
                 def getFromAircraftFields_NoniterableValueDesired(name):
@@ -389,7 +392,7 @@ class Port8111:
         try:
             response = requests.get(
                 "http://127.0.0.1:8111/" + queryType.getPath(),
-                timeout=timeout if timeout is not None else 1,
+                timeout=timeout if timeout is not None else 0.5,
             )
         except (requests.ConnectionError, requests.ReadTimeout):
             return None
@@ -397,6 +400,184 @@ class Port8111:
         return json_data
 
     @staticmethod
-    def get(queryType: "Port8111.QueryType", timeout=None):
+    def get(
+        queryType: "Port8111.QueryType", timeout: typing.Optional[float] = None
+    ) -> typing.Union[
+        "Port8111.BeanIndicatorAir",
+        "Port8111.BeanIndicatorTank",
+        "Port8111.BeanMapInfo",
+        "Port8111.BeanState",
+        "Port8111.BeanInvalid",
+    ]:
         json_data = Port8111.get_raw_json(queryType, timeout=timeout)
         return queryType.parseJson(json_data)
+
+
+@dataclasses.dataclass
+class Blkx:
+
+    class FieldType(enum.Enum):
+        string = 0
+        real = 1
+        integer = 2
+        bool = 3
+        dict = 4
+
+    @dataclasses.dataclass
+    class Field:
+        name: str
+        type: "Blkx.FieldType" = None
+        value: typing.Any = None
+
+    fields: "list[Blkx.Field]"
+
+    class _BlkxParser:
+        class _TokenType(enum.Enum):
+            identifier = 0
+            text = 1
+            num = 2
+            bra = 3
+            ket = 4
+            colon = 5
+            eq = 6
+            blank = 7
+            eof = 8
+
+        matchers = [
+            FSMUtil.TokenMatcher(r"^[a-zA-Z_]{1}[a-zA-Z_0-9]*", _TokenType.identifier),
+            FSMUtil.TokenMatcher(r'^".*"', _TokenType.text),
+            FSMUtil.TokenMatcher(r"^(-)?\d+(\.\d+)", _TokenType.num),
+            FSMUtil.TokenMatcher(r"^{", _TokenType.bra),
+            FSMUtil.TokenMatcher(r"^}", _TokenType.ket),
+            FSMUtil.TokenMatcher(r"^:", _TokenType.colon),
+            FSMUtil.TokenMatcher(r"^=", _TokenType.eq),
+            FSMUtil.TokenMatcher(r"^\s+", _TokenType.blank),
+            FSMUtil.TokenMatcher(r"^$", _TokenType.eof),
+        ]
+
+        class _FSMNode(enum.Enum):
+            start = 0
+            identifier = 1
+            colon = 2
+            eq = 3
+            expectingEq = 4
+
+        @dataclasses.dataclass
+        class _ParseReturn:
+            value: "list[Blkx.Field]"
+            end: int
+            endedBy: "Blkx._BlkxParser._TokenType"
+
+        @staticmethod
+        def _fields2dict(fields: "list[Blkx.Field]"):
+            ret = {}
+            for f in fields:
+                if f.type == Blkx.FieldType.dict:
+                    val = Blkx._BlkxParser._fields2dict(f.value)
+                else:
+                    val = f.value
+                fname = f.name
+                if fname not in ret:
+                    ret[fname] = val
+                else:
+                    if not isinstance(ret[fname], list):
+                        ret[fname] = [ret[fname]]
+                    ret[fname].append(val)
+            return ret
+
+        @staticmethod
+        def _parseRecursive(s: str, i: int = 0) -> "Blkx._BlkxParser._ParseReturn":
+            node = Blkx._BlkxParser._FSMNode.start
+            fields = []
+            curField = None
+            while True:
+                while True:
+                    token = FSMUtil.getToken(s, i, Blkx._BlkxParser.matchers)
+                    i = token.end
+                    if token.type != Blkx._BlkxParser._TokenType.blank:
+                        break
+                if node == Blkx._BlkxParser._FSMNode.start:
+                    if token.type == Blkx._BlkxParser._TokenType.identifier:
+                        node = Blkx._BlkxParser._FSMNode.identifier
+                        curField = Blkx.Field(token.value)
+                        fields.append(curField)
+                    elif token.type in (
+                        Blkx._BlkxParser._TokenType.ket,
+                        Blkx._BlkxParser._TokenType.eof,
+                    ):
+                        # end
+                        return Blkx._BlkxParser._ParseReturn(
+                            fields, token.end, token.type
+                        )
+                    else:
+                        token.Unexpected()
+                elif node == Blkx._BlkxParser._FSMNode.identifier:
+                    if token.type == Blkx._BlkxParser._TokenType.bra:
+                        curField.type = Blkx.FieldType.dict
+                        child = Blkx._BlkxParser._parseRecursive(s, token.end)
+                        i = child.end
+                        curField.value = child.value
+                        node = Blkx._BlkxParser._FSMNode.start
+                    elif token.type == Blkx._BlkxParser._TokenType.colon:
+                        node = Blkx._BlkxParser._FSMNode.colon
+                    else:
+                        token.Unexpected()
+                elif node == Blkx._BlkxParser._FSMNode.colon:
+                    if token.type == Blkx._BlkxParser._TokenType.identifier:
+                        if token.value == "t":
+                            curField.type = Blkx.FieldType.string
+                        elif token.value == "r":
+                            curField.type = Blkx.FieldType.real
+                        elif token.value == "i":
+                            curField.type = Blkx.FieldType.integer
+                        elif token.value == "b":
+                            curField.type = Blkx.FieldType.bool
+                        else:
+                            token.Unexpected()
+                        node = Blkx._BlkxParser._FSMNode.expectingEq
+                    else:
+                        token.Unexpected()
+                elif node == Blkx._BlkxParser._FSMNode.expectingEq:
+                    if token.type == Blkx._BlkxParser._TokenType.eq:
+                        node = Blkx._BlkxParser._FSMNode.eq
+                    else:
+                        token.Unexpected()
+                elif node == Blkx._BlkxParser._FSMNode.eq:
+                    if token.type in (
+                        Blkx._BlkxParser._TokenType.text,
+                        Blkx._BlkxParser._TokenType.num,
+                        Blkx._BlkxParser._TokenType.identifier,
+                    ):
+                        value = None
+                        if token.type == Blkx._BlkxParser._TokenType.text:
+                            # del quotes
+                            assert curField.type == Blkx.FieldType.string
+                            value = token.value[1:-1]
+                        elif token.type == Blkx._BlkxParser._TokenType.num:
+                            assert curField.type in (
+                                Blkx.FieldType.real,
+                                Blkx.FieldType.integer,
+                            )
+                            if curField.type == Blkx.FieldType.real:
+                                value = float(token.value)
+                            elif curField.type == Blkx.FieldType.integer:
+                                value = int(token.value)
+                        elif token.type == Blkx._BlkxParser._TokenType.identifier:
+                            if token.value == "yes":
+                                value = True
+                            elif token.value == "no":
+                                value = False
+                            else:
+                                token.Unexpected()
+                            assert curField.type == Blkx.FieldType.bool
+                        curField.value = value
+                        node = Blkx._BlkxParser._FSMNode.start
+                    else:
+                        token.Unexpected()
+
+    @staticmethod
+    def fromText(s: str):
+        return Blkx(Blkx._BlkxParser._parseRecursive(s).value)
+
+    def toDict(self):
+        return Blkx._BlkxParser._fields2dict(self.fields)
