@@ -649,7 +649,7 @@ class FSMUtil:
     class TokenTypeLike(enum.Enum): ...
 
     class TokenMatcher:
-        def tryMatch(self, s: str) -> typing.Union[None, "FSMUtil.Token"]: ...
+        def tryMatch(self, s: str, i: int) -> typing.Union[None, "FSMUtil.Token"]: ...
 
     @dataclasses.dataclass
     class RegexpTokenMatcher(TokenMatcher):
@@ -659,10 +659,12 @@ class FSMUtil:
         def __post_init__(self):
             self.compiledExp = regex.compile(self.exp)
 
-        def tryMatch(self, s: str) -> "None | FSMUtil.Token":
-            match = regex.match(self.compiledExp, s)
+        def tryMatch(self, s: str, i: int) -> "None | FSMUtil.Token":
+            match = regex.match(self.compiledExp, s[i:])
             if match is not None:
-                return FSMUtil.Token(self.type, match.group(0), 0, len(match.group(0)))
+                return FSMUtil.Token(
+                    self.type, match.group(0), i, i + len(match.group(0))
+                )
             return None
 
     @dataclasses.dataclass(repr=True)
@@ -681,15 +683,12 @@ class FSMUtil:
     def getToken(
         s: str, i: int, matchers: list["FSMUtil.TokenMatcher"]
     ) -> "FSMUtil.Token":
-        si = s[i:]
         for m in matchers:
-            token = m.tryMatch(si)
+            token = m.tryMatch(s, i)
             if token is not None:
-                token.start = i
-                token.end += i
                 return token
         raise FSMUtil.ParseError(
-            f"unparseable token at {i}: {si[:10] if len(si) > 10 else si}"
+            f"unparseable token at {i}: {s[i:i+10] if len(s) > i+10 else s[i:]}"
         )
 
 
