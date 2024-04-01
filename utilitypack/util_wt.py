@@ -349,10 +349,35 @@ class Port8111:
                 )
             return aircraft
 
+    @dataclasses.dataclass
+    class BeanHudMsgDamage:
+        id: int
+        msg: str
+        sender: str
+        enemy: bool
+        mode: str
+        time: int  # in seconds
+
+    @dataclasses.dataclass
+    class BeanHudMsg:
+        events: list
+        damage: list["Port8111.BeanHudMsgDamage"]
+
+        @staticmethod
+        def fromDict(data_dict: dict):
+            # return BeanUtil.copyProperties(data_dict, Port8111.BeanHudMsg)
+            events = data_dict.get("events", list())
+            damage = data_dict.get("damage", list())
+            damage = [
+                BeanUtil.copyProperties(d, Port8111.BeanHudMsgDamage) for d in damage
+            ]
+            return Port8111.BeanHudMsg(events=events, damage=damage)
+
     class QueryType(enum.Enum):
         indicator = 0
         map_info = 1
         state = 2
+        hudmsg = 3
 
         @staticmethod
         def __throwEnumNotFound():
@@ -365,6 +390,8 @@ class Port8111:
                 return "map_info.json"
             elif self == self.state:
                 return "state"
+            elif self == self.hudmsg:
+                return "hudmsg"
             Port8111.QueryType.__throwEnumNotFound()
             return ""
 
@@ -385,13 +412,16 @@ class Port8111:
                 return BeanUtil.copyProperties(json_obj, Port8111.BeanMapInfo)
             elif self == self.state:
                 return Port8111.BeanState.fromDict(json_obj)
+            elif self == self.hudmsg:
+                return Port8111.BeanHudMsg.fromDict(json_obj)
             Port8111.QueryType.__throwEnumNotFound()
 
     @staticmethod
-    def get_raw_json(queryType: "Port8111.QueryType", timeout=None):
+    def get_raw_json(queryType: "Port8111.QueryType", param=None, timeout=None):
         try:
             response = requests.get(
                 "http://127.0.0.1:8111/" + queryType.getPath(),
+                params=param,
                 timeout=timeout if timeout is not None else 0.5,
             )
         except (requests.ConnectionError, requests.ReadTimeout):
@@ -401,7 +431,9 @@ class Port8111:
 
     @staticmethod
     def get(
-        queryType: "Port8111.QueryType", timeout: typing.Optional[float] = None
+        queryType: "Port8111.QueryType",
+        param=None,
+        timeout: typing.Optional[float] = None,
     ) -> typing.Union[
         "Port8111.BeanIndicatorAir",
         "Port8111.BeanIndicatorTank",
@@ -409,7 +441,7 @@ class Port8111:
         "Port8111.BeanState",
         "Port8111.BeanInvalid",
     ]:
-        json_data = Port8111.get_raw_json(queryType, timeout=timeout)
+        json_data = Port8111.get_raw_json(queryType, param=param, timeout=timeout)
         return queryType.parseJson(json_data)
 
 
@@ -444,7 +476,9 @@ class Blkx:
             eof = 8
 
         matchers = [
-            FSMUtil.RegexpTokenMatcher(r"^[a-zA-Z_]{1}[a-zA-Z_0-9]*", _TokenType.identifier),
+            FSMUtil.RegexpTokenMatcher(
+                r"^[a-zA-Z_]{1}[a-zA-Z_0-9]*", _TokenType.identifier
+            ),
             FSMUtil.RegexpTokenMatcher(r'^".*"', _TokenType.text),
             FSMUtil.RegexpTokenMatcher(r"^(-)?\d+(\.\d+)", _TokenType.num),
             FSMUtil.RegexpTokenMatcher(r"^{", _TokenType.bra),

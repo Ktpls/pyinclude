@@ -318,5 +318,17 @@ def get_AABB(binary_image):
     return (min_x, min_y, max_x, max_y)
 
 
-def NormalizeImgToChanneled_CvFormat(m:cv.Mat):
+def NormalizeImgToChanneled_CvFormat(m: cv.Mat):
     return m if len(m.shape) == 3 else m.reshape(m.shape + (1,))
+
+
+def SeperateObject(m: np.ndarray):
+    contours = cv.findContours(
+        m.astype("uint8"), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE
+    )[0]
+    ret: list[np.ndarray] = []
+    for c in range(len(contours)):
+        mcontour = np.zeros_like(m)
+        cv.drawContours(mcontour, contours, c, 1, thickness=cv.FILLED)
+        ret.append(mcontour)
+    return ret

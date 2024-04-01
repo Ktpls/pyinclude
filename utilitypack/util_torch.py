@@ -252,7 +252,6 @@ class inception(torch.nn.Module):
 
 
 class res_through(torch.nn.Module):
-    _modules = {}
 
     def __init__(self, *components, combiner=None) -> None:
         super().__init__()
@@ -298,7 +297,7 @@ class trainpipe:
         dataloader,
         optimizer,
         calcLossFoo,
-        epochnum=6,
+        epochnum=10,
         outputperbatchnum=100,
         customSubOnOutput=None,
     ):
@@ -328,3 +327,9 @@ class trainpipe:
 
         # win32api.Beep(1000, 1000)
         print("Done!")
+
+
+def ModuleArgDistribution(mod: torch.nn.Module):
+    return "\n".join(
+        [f"{k}: {v.numel()}" for k, v in mod.named_parameters() if v.requires_grad]
+    )

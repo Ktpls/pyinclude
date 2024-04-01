@@ -613,22 +613,21 @@ class Progress:
         self.nowStage = 0
         self.printPercentageStep = printPercentageStep
         self.cur = cur
-        self.ps = perf_statistic()
+        self.ps = perf_statistic(startnow=True)
 
     def update(self, current: float) -> None:
         self.cur = current
         while True:
             if current / self.total > self.nowStage * self.printPercentageStep:
                 self.nowStage += 1
-                self.ps.stop()
                 if current > 1:
+                    self.ps.countcycle()
                     # not the first time
                     instantSpeed = (self.printPercentageStep * self.total) / (
-                        self.ps.time() + EPS
+                        self.ps.aveTime() + EPS
                     )
                 else:
                     instantSpeed = 1
-                self.ps.clear().start()
                 print(
                     f"{100 * current / self.total:>3.2f}% of {self.total}, {instantSpeed:.2f}it/s",
                     end="\r",
@@ -637,9 +636,10 @@ class Progress:
                 break
 
     def setFinish(self):
+        self.ps.stop()
         self.update(self.total)
         print("")
-        print("finished")
+        print(f"finished within {self.ps.time():.2f}s")
 
 
 class FSMUtil:
@@ -1906,7 +1906,12 @@ class BeanUtil:
 
         def ObjSetter(obj, k, v):
             if k in obj.__dict__:
-                obj.__setattr__(k, BeanUtil.__FieldConversionFunc(obj, k)(v))
+                try:
+                    # try convert it to proper type
+                    v = BeanUtil.__FieldConversionFunc(obj, k)(v)
+                except:
+                    pass
+                obj.__setattr__(k, v)
 
         return ObjSetter
 
@@ -2001,19 +2006,17 @@ def FlipCoin() -> bool:
 @EasyWrapper
 def Singleton(cls):
     cls.__singleton_instance__ = None
-    cls.__singleton_instance_inited__ = False
-    oldNew = cls.__new__
-    oldInit = cls.__init__
+    cls.__oldNew__ = cls.__new__
+    cls.__oldInit__ = cls.__init__
 
-    def newNew(cls):
+    def newNew(cls, *args, **kwargs):
         if cls.__singleton_instance__ is None:
-            cls.__singleton_instance__ = oldNew(cls)
+            instance = cls.__oldNew__(cls)
+            cls.__oldInit__(instance, *args, **kwargs)
+            cls.__singleton_instance__ = instance
         return cls.__singleton_instance__
 
-    def newInit(self, *args, **kwargs):
-        if not self.__class__.__singleton_instance_inited__:
-            oldInit(self.__class__.__singleton_instance__, *args, **kwargs)
-            self.__class__.__singleton_instance_inited__ = True
+    def newInit(self, *args, **kwargs): ...
 
     cls.__new__ = newNew
     cls.__init__ = newInit
@@ -2138,3 +2141,15 @@ def Coalesce(*args):
         if arg is not None:
             return arg
     return None
+
+
+def BetterGroupBy(l: list, pred):
+    # return {n: list(ll) for n, ll in itertools.groupby(sorted(l, key=pred), pred)}
+    r = dict()
+    for item in l:
+        key = pred(item)
+        if key in r:
+            r[key].append(item)
+        else:
+            r[key] = [item]
+    return r
