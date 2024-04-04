@@ -657,7 +657,7 @@ class FSMUtil:
         type: "FSMUtil.TokenTypeLike"
 
         def __post_init__(self):
-            self.compiledExp = regex.compile(self.exp)
+            self.compiledExp = regex.compile(self.exp,flags=regex.DOTALL)
 
         def tryMatch(self, s: str, i: int) -> "None | FSMUtil.Token":
             match = regex.match(self.compiledExp, s[i:])
@@ -1049,46 +1049,36 @@ class expparser:
         def isUnary(self):
             return self in [expparser._OprType.NEG, expparser._OprType.NOT]
 
+    _matcherList = [
+        # comment "/" out priored the operator "/"
+        FSMUtil.RegexpTokenMatcher(exp=r"^//.+?\n", type=_TokenType.COMMENT),
+        FSMUtil.RegexpTokenMatcher(exp=r"^/\*.+?\*/", type=_TokenType.COMMENT),
+        FSMUtil.RegexpTokenMatcher(
+            exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=_TokenType.OPR
+        ),  # two width operator, match before single widthed ones to get priority
+        FSMUtil.RegexpTokenMatcher(
+            exp=r"^[*/+\-^=<>&|]", type=_TokenType.OPR
+        ),  # single width operator
+        FSMUtil.RegexpTokenMatcher(exp=r"^[0-9]+(\.[0-9]+)?", type=_TokenType.NUMLIKE),
+        # cant process r'"\\"' properly, but simply ignore it
+        FSMUtil.RegexpTokenMatcher(exp=r'^".+?(?<!\\)"', type=_TokenType.NUMLIKE),
+        FSMUtil.RegexpTokenMatcher(exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=_TokenType.IDR),
+        FSMUtil.RegexpTokenMatcher(exp=r"^\(", type=_TokenType.BRA),
+        FSMUtil.RegexpTokenMatcher(exp=r"^\)", type=_TokenType.KET),
+        FSMUtil.RegexpTokenMatcher(exp=r"^,", type=_TokenType.COMMA),
+        FSMUtil.RegexpTokenMatcher(exp=r"^$", type=_TokenType.EOF),
+        FSMUtil.RegexpTokenMatcher(exp=r"^[\s\r\n\t]+", type=_TokenType.SPACE),
+    ]
+
     @staticmethod
     def _NextToken(s, i=0):
-
-        matcherList = [
-            # comment "/" out priored the operator "/"
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^//.+\n", type=expparser._TokenType.COMMENT
-            ),
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^/\*.+?\*/", type=expparser._TokenType.COMMENT
-            ),
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=expparser._TokenType.OPR
-            ),  # two width operator, match before single widthed ones to get priority
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^[*/+\-^=<>&|]", type=expparser._TokenType.OPR
-            ),  # single width operator
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^[0-9]+(\.[0-9]+)?", type=expparser._TokenType.NUMLIKE
-            ),
-            # cant process r'"\\"' properly, but simply ignore it
-            FSMUtil.RegexpTokenMatcher(
-                exp=r'^".+?(?<!\\)"', type=expparser._TokenType.NUMLIKE
-            ),
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=expparser._TokenType.IDR
-            ),
-            FSMUtil.RegexpTokenMatcher(exp=r"^\(", type=expparser._TokenType.BRA),
-            FSMUtil.RegexpTokenMatcher(exp=r"^\)", type=expparser._TokenType.KET),
-            FSMUtil.RegexpTokenMatcher(exp=r"^,", type=expparser._TokenType.COMMA),
-            FSMUtil.RegexpTokenMatcher(exp=r"^$", type=expparser._TokenType.EOF),
-            FSMUtil.RegexpTokenMatcher(
-                exp=r"^[\s\r\n\t]+", type=expparser._TokenType.SPACE
-            ),
-        ]
-
         def getNextToken(s, i):
             while True:
-                ret = FSMUtil.getToken(s, i, matcherList)
-                if ret.type not in [expparser._TokenType.SPACE, expparser._TokenType.COMMENT]:
+                ret = FSMUtil.getToken(s, i, expparser._matcherList)
+                if ret.type not in [
+                    expparser._TokenType.SPACE,
+                    expparser._TokenType.COMMENT,
+                ]:
                     break
                 else:
                     i = ret.end
