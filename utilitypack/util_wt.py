@@ -445,6 +445,32 @@ class Port8111:
         return queryType.parseJson(json_data)
 
 
+@Singleton
+@AnnotationUtil.Annotation(fetch8111Interval=1)
+class Port8111Cache:
+    typeCache: "dict[Port8111.QueryType, Port8111Cache.SingleTypeCache]"
+
+    class SingleTypeCache(Cache):
+        queryType: Port8111.QueryType
+
+        def __init__(self, queryType):
+            super().__init__(
+                toFetch=lambda: Port8111.get(queryType),
+                updateStrategey=Cache.UpdateStrategey.Outdated(
+                    AnnotationUtil.getAnnotations(Port8111Cache).fetch8111Interval
+                ),
+            )
+            self.queryType = queryType
+
+    def __init__(self) -> None:
+        self.typeCache = dict()
+
+    def get(self, queryType: Port8111.QueryType, newest=None):
+        if queryType not in self.typeCache:
+            self.typeCache[queryType] = self.SingleTypeCache(queryType)
+        return self.typeCache[queryType].get(newest=newest)
+
+
 @dataclasses.dataclass
 class Blkx:
 

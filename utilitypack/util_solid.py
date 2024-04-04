@@ -779,6 +779,7 @@ class expparser:
         IDR = 6
         SPACE = 7
         COMMA = 8
+        COMMENT = 9
 
     class _State(enum.Enum):
         START = 1
@@ -1052,6 +1053,13 @@ class expparser:
     def _NextToken(s, i=0):
 
         matcherList = [
+            # comment "/" out priored the operator "/"
+            FSMUtil.RegexpTokenMatcher(
+                exp=r"^//.+\n", type=expparser._TokenType.COMMENT
+            ),
+            FSMUtil.RegexpTokenMatcher(
+                exp=r"^/\*.+?\*/", type=expparser._TokenType.COMMENT
+            ),
             FSMUtil.RegexpTokenMatcher(
                 exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=expparser._TokenType.OPR
             ),  # two width operator, match before single widthed ones to get priority
@@ -1078,7 +1086,12 @@ class expparser:
         ]
 
         def getNextToken(s, i):
-            ret = FSMUtil.getToken(s, i, matcherList)
+            while True:
+                ret = FSMUtil.getToken(s, i, matcherList)
+                if ret.type not in [expparser._TokenType.SPACE, expparser._TokenType.COMMENT]:
+                    break
+                else:
+                    i = ret.end
             if ret.type == expparser._TokenType.NUMLIKE:
                 # here is only num and str without other numlike types
                 if len(ret.value) >= 2 and ret.value[0] == '"':
@@ -1089,8 +1102,6 @@ class expparser:
                     ret.value = float(ret.value)
             elif ret.type == expparser._TokenType.OPR:
                 ret.value = expparser._OprType.fromStr(ret.value)
-            elif ret.type == expparser._TokenType.SPACE:
-                return getNextToken(s, ret.end)
             return ret
 
         return getNextToken(s, i)
@@ -2061,7 +2072,7 @@ class Cache:
     class UpdateStrategey:
         class UpdateStrategeyBase:
             def test(self, cache: "Cache") -> bool: ...
-            def updated(self, cache: "Cache") -> None: ...
+            def onUpdated(self, cache: "Cache") -> None: ...
         @dataclasses.dataclass
         class Outdated(UpdateStrategeyBase):
             outdatedTime: float
@@ -2072,7 +2083,7 @@ class Cache:
                     return True
                 return time.perf_counter() - self.__lastUpdateTime > self.outdatedTime
 
-            def updated(self, cache: "Cache"):
+            def onUpdated(self, cache: "Cache"):
                 self.__lastUpdateTime = time.perf_counter()
 
         @dataclasses.dataclass
@@ -2094,7 +2105,7 @@ class Cache:
     def update(self):
         self.__val = self.__toFetch()
         for u in self.updateStrategey:
-            u.updated(self)
+            u.onUpdated(self)
 
     def get(self, newest=None):
         if newest is None:

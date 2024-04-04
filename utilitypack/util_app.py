@@ -22,7 +22,7 @@ class BulletinApp:
                 ["($w$)", 1],
                 ["ヽ(≧Д≦)ノ", 1],
                 ["(￣ω￣;)", 1],
-                ["(0v0)", 1],
+                ["(OvO)", 1],
             ],
         )
         bulletinoutputpos = replaceNone(bulletinoutputpos, (100, 500))
