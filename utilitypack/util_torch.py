@@ -82,6 +82,11 @@ class nestedPyPlot:
         return ax
 
 
+def NewPyPlotAxis():
+    fig, ax = plt.subplots()
+    return ax
+
+
 def setModule(model, path=None, device=None):
     import os
 

@@ -3,7 +3,7 @@ from .util_np import *
 from .util_ocv import *
 from ctypes import windll, byref, c_ubyte
 from ctypes.wintypes import RECT, HWND
-from zipfile import ZipFile
+import zipfile
 import win32api
 import win32con
 import win32gui
@@ -729,7 +729,7 @@ def save_list_to_xls(
 
     # Iterate over the list and write each item to a new row
     for row, rowcontent in enumerate(data_list):
-        rowcontent=NormalizeIterableOrSingleArgToIterable(rowcontent)
+        rowcontent = NormalizeIterableOrSingleArgToIterable(rowcontent)
         for col, item in enumerate(rowcontent):
             ws.cell(row=row + 1, column=col + 1, value=item)
 
@@ -797,7 +797,7 @@ class Rhythms:
 
 
 def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
-    zipf = ZipFile(zipf)
+    zipf = zipfile.ZipFile(zipf)
     singleFile = not isinstance(filename, (tuple, list))
     if singleFile:
         filename = [filename]

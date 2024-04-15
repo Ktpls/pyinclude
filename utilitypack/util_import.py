@@ -2,8 +2,15 @@ import importlib
 import sys
 
 
-def importNoCache(name, package=None):
-    if name in sys.modules:
-        return importlib.reload(sys.modules.get(name))
-    else:
-        return importlib.import_module(name, package)
+
+def import_or_reload(module_name):
+    module = sys.modules.get(module_name)
+    try:
+        if module is None:
+            module = importlib.import_module(module_name)
+        else:
+            module = importlib.reload(module)
+    except ImportError:
+        module = None
+
+    return module
