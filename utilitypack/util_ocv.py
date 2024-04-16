@@ -438,7 +438,9 @@ class MtiFilter:
         #     MtiFilter.MtiStorage
         # ) = AccessibleQueue(5)
 
-    def update(self, img: np.ndarray, cammotion: np.ndarray):
+    def update(self, img: np.ndarray, cammotion: np.ndarray = None):
+        if cammotion is None:
+            cammotion = np.array([[1, 0, 0], [0, 1, 0]])
         if self.mtiQueue.isEmpty():
             ret = None
         else:
