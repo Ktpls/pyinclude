@@ -7,7 +7,7 @@ numpy
 import numpy as np
 
 np.seterr(all="raise")
-
+import scipy.interpolate as interpolate
 EPS = 1e-10
 LOGEPS = -10
 

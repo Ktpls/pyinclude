@@ -657,7 +657,7 @@ class FSMUtil:
         type: "FSMUtil.TokenTypeLike"
 
         def __post_init__(self):
-            self.compiledExp = regex.compile(self.exp,flags=regex.DOTALL)
+            self.compiledExp = regex.compile(self.exp, flags=regex.DOTALL)
 
         def tryMatch(self, s: str, i: int) -> "None | FSMUtil.Token":
             match = regex.match(self.compiledExp, s[i:])
@@ -1769,10 +1769,7 @@ class AccessibleQueue:
 
     def __init__(self, maxsize=1):
         self._maxsize = maxsize
-        self._cursize = 0
-        self._sptr = 0
-        self._eptr = 0
-        self._q = [None] * maxsize
+        self.clear()
 
     def push(self, val):
         if self.isFull():
@@ -1795,6 +1792,12 @@ class AccessibleQueue:
         if self.isFull():
             self.pop()
         self.push(val)
+
+    def clear(self):
+        self._q = [None] * self._maxsize
+        self._sptr = 0
+        self._eptr = 0
+        self._cursize = 0
 
     def resize(self, newsize):
         if newsize < self._cursize:

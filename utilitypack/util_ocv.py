@@ -332,3 +332,149 @@ def SeperateObject(m: np.ndarray):
         cv.drawContours(mcontour, contours, c, 1, thickness=cv.FILLED)
         ret.append(mcontour)
     return ret
+
+
+@dataclasses.dataclass
+class MotionEstimator:
+    mask: np.ndarray = None
+    # subsample to be faster
+    subsamplerate: float = 0.2
+    # buffer fields
+    lastScreen: np.ndarray = dataclasses.field(init=False, default=None)
+
+    def cameramotion(self, newScreen, subsamplerate=1):
+        prev_pts = cv.goodFeaturesToTrack(
+            self.lastScreen,
+            maxCorners=100,
+            qualityLevel=0.001,
+            minDistance=3,
+            blockSize=3,
+            mask=self.mask,
+        )
+        if prev_pts is None:
+            raise Exception("No point to track")
+
+        # Calculate optical flow (i.e. track feature points)
+        curr_pts, status, err = cv.calcOpticalFlowPyrLK(
+            self.lastScreen, newScreen, prev_pts, None
+        )
+
+        # Sanity check
+        assert prev_pts.shape == curr_pts.shape
+
+        # Filter only valid points
+        idx = np.where(status == 1)[0]
+        if idx.size == 0:
+            return curr_pts, [[1, 0, 0], [0, 1, 0]]
+        prev_pts = prev_pts[idx]
+        curr_pts = curr_pts[idx]
+        prev_pts = prev_pts / subsamplerate
+        curr_pts = curr_pts / subsamplerate
+
+        # Find transformation matrix
+        # m = cv.estimateRigidTransform(prev_pts, curr_pts, fullAffine=False)
+        # will only work with OpenCV-3 or less
+        m = cv.estimateAffinePartial2D(prev_pts, curr_pts, False)[0]
+
+        # Extract traslation
+
+        return curr_pts, m
+
+    def resizeScreen(self, scr):
+        return cv.resize(
+            scr,
+            None,
+            fx=self.subsamplerate,
+            fy=self.subsamplerate,
+            interpolation=cv.INTER_AREA,
+        )
+
+    def __post_init__(self):
+        if self.mask is not None:
+            self.mask = self.resizeScreen(self.mask)
+
+    def update(self, newScreen):
+        newScreen = self.resizeScreen(newScreen)
+        if self.lastScreen is None:
+            self.lastScreen = newScreen
+            return None
+        else:
+            ret = self.cameramotion(newScreen, self.subsamplerate)
+            self.lastScreen = newScreen
+            return ret
+
+
+class MtiFilter:
+    @dataclasses.dataclass
+    class MtiFrame:
+        img: np.ndarray
+
+        # compared with prev frame
+        cammotion: np.ndarray
+
+    def __init__(self, mtiQueueSize, filter=None) -> None:
+        """
+        consider storage only the transformed and meaned pic
+        like the dynamic window way. kick the oldest one in queue out, and take its effect out of meaned pic
+        """
+        if filter is None:
+            self.filter = interpolate.interp1d(
+                [0, 0.3, 0.6, 1],
+                [0, 0, 1, 1],
+                kind="linear",
+                bounds_error=False,
+                fill_value=0,
+                assume_sorted=True,
+            )
+        else:
+            self.filter = filter
+        # fake type notation in order to scam ide type analysis
+        self.mtiQueue: list[MtiFilter.MtiFrame] | AccessibleQueue = AccessibleQueue(
+            mtiQueueSize
+        )
+
+        # try convienient type annotation but wont work
+        # self.mtiQueue: AccessibleQueue.Annotation(
+        #     MtiFilter.MtiStorage
+        # ) = AccessibleQueue(5)
+
+    def update(self, img: np.ndarray, cammotion: np.ndarray):
+        if self.mtiQueue.isEmpty():
+            ret = None
+        else:
+            # mit proc
+            def cammotionmat2x3to3x3(cammot: np.ndarray):
+                return np.concatenate(
+                    [
+                        cammot,
+                        [[0, 0, 1]],
+                    ]
+                )
+
+            def cammotionmat3x3to2x3(cammot: np.ndarray):
+                return cammot[:2, :]
+
+            motionSum = cammotionmat2x3to3x3(cammotion)
+            scrsize = img.shape
+            prevScreenAtNowView = []
+            for i in range(len(self.mtiQueue)):
+                # iter from the newest to oldest
+                prevScreenAtNowView.append(
+                    cv.warpAffine(
+                        self.mtiQueue[-i].img,
+                        cammotionmat3x3to2x3(motionSum),  # only x, y, no w
+                        np.flip(scrsize),
+                        borderMode=cv.BORDER_CONSTANT,
+                        borderValue=0,
+                    )
+                )
+                motionSum = (
+                    cammotionmat2x3to3x3(self.mtiQueue[-i].cammotion) @ motionSum
+                )
+            prevsignal = np.array(prevScreenAtNowView)
+            sigmax = np.max(prevsignal, axis=0)
+            sigmin = np.min(prevsignal, axis=0)
+
+            ret = self.filter(sigmax - sigmin)
+        self.mtiQueue.push__pop_if_full(MtiFilter.MtiFrame(img, cammotion))
+        return ret
