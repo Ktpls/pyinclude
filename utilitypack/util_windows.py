@@ -230,6 +230,10 @@ class fullScrHUD:
 
     @FunctionalWrapper
     def writecontent(self, lt, content):
+        if content.shape[0] > self.resolution[0] - lt[0]:
+            content = content[: self.resolution[0] - lt[0], :, :]
+        if content.shape[1] > self.resolution[1] - lt[1]:
+            content = content[:, : self.resolution[1] - lt[1], :]
         self.m2draw[
             lt[0] : lt[0] + content.shape[0],
             lt[1] : lt[1] + content.shape[1],
