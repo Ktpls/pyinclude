@@ -1501,7 +1501,7 @@ class perf_statistic:
 
     def stop(self):
         if self._starttime is None:
-            return
+            return self
         self._stagedtime += self._timeCurrentlyCounting()
         self._starttime = None
         return self

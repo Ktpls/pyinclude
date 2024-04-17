@@ -405,6 +405,29 @@ class MotionEstimator:
             return ret
 
 
+class AffineMats:
+    zoom = lambda rate: np.array(
+        [[rate, 0, 0], [0, rate, 0], [0, 0, 1]],
+        dtype=np.float32,
+    )
+    shift = lambda x, y: np.array(
+        [[1, 0, x], [0, 1, y], [0, 0, 1]],
+        dtype=np.float32,
+    )
+    flip = lambda lr, ud: np.array(
+        [[lr, 0, 0], [0, ud, 0], [0, 0, 1]],
+        dtype=np.float32,
+    )
+    rot = lambda the: np.array(
+        [[np.cos(the), np.sin(the), 0], [-np.sin(the), np.cos(the), 0], [0, 0, 1]],
+        dtype=np.float32,
+    )
+    identity = lambda: np.array(
+        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        dtype=np.float32,
+    )
+
+
 class MtiFilter:
     @dataclasses.dataclass
     class MtiFrame:
@@ -413,7 +436,7 @@ class MtiFilter:
         # compared with prev frame
         cammotion: np.ndarray
 
-    def __init__(self, mtiQueueSize, filter=None) -> None:
+    def __init__(self, mtiQueueSize, filter=None, camstablize=True) -> None:
         """
         consider storage only the transformed and meaned pic
         like the dynamic window way. kick the oldest one in queue out, and take its effect out of meaned pic
@@ -429,6 +452,7 @@ class MtiFilter:
             )
         else:
             self.filter = filter
+        self.camstablize = camstablize
         # fake type notation in order to scam ide type analysis
         self.mtiQueue: list[MtiFilter.MtiFrame] | AccessibleQueue = AccessibleQueue(
             mtiQueueSize
@@ -439,9 +463,18 @@ class MtiFilter:
         #     MtiFilter.MtiStorage
         # ) = AccessibleQueue(5)
 
-    def update(self, img: np.ndarray, cammotion: np.ndarray = None):
-        if cammotion is None:
-            cammotion = np.array([[1, 0, 0], [0, 1, 0]])
+    def update(
+        self, img: np.ndarray, roi: np.ndarray = None, cammotion: np.ndarray = None
+    ):
+        if not self.camstablize or cammotion is None:
+            cammotion = np.array([[1, 0, 0], [0, 1, 0]], np.float32)
+        if roi is None:
+            cutRoiShift = AffineMats.identity()
+            desiredImgShape = np.flip(img.shape[:2])
+        else:
+            cutRoiShift = AffineMats.shift(-roi[0], -roi[1])
+            desiredImgShape = np.flip(np.array(roi[2:]) - np.array(roi[:2]))
+
         if self.mtiQueue.isEmpty():
             ret = None
         else:
@@ -457,29 +490,39 @@ class MtiFilter:
             def cammotionmat3x3to2x3(cammot: np.ndarray):
                 return cammot[:2, :]
 
-            motionSum = cammotionmat2x3to3x3(cammotion)
-            scrsize = img.shape
-            prevScreenAtNowView = []
+            if self.camstablize:
+                motionProd = cammotionmat2x3to3x3(cammotion)
+            else:
+                motionProd = None
+            prevScreenAtNowViewList = []
             for i in range(len(self.mtiQueue)):
                 # iter from the newest to oldest
-                prevScreenAtNowView.append(
-                    cv.warpAffine(
+                if self.camstablize:
+                    # cut roi is done in affining
+                    # warpAffine processing float32 is faster than uint8
+                    prevScreenAtNowView = cv.warpAffine(
                         self.mtiQueue[-i].img,
-                        cammotionmat3x3to2x3(motionSum),  # only x, y, no w
-                        np.flip(scrsize),
+                        cammotionmat3x3to2x3(cutRoiShift @ motionProd),
+                        desiredImgShape,
                         borderMode=cv.BORDER_CONSTANT,
                         borderValue=0,
                     )
-                )
-                motionSum = (
-                    cammotionmat2x3to3x3(self.mtiQueue[-i].cammotion) @ motionSum
-                )
-            prevsignal = np.array(prevScreenAtNowView)
-            sigmax = np.max(prevsignal, axis=0)
-            sigmin = np.min(prevsignal, axis=0)
-            delta = sigmax - sigmin
-            delta = np.max(delta, axis=-1)  # aggregate by channel
-
+                    motionProd = (
+                        cammotionmat2x3to3x3(self.mtiQueue[-i].cammotion) @ motionProd
+                    )
+                else:
+                    if roi is not None:
+                        # cut manually
+                        # slightly faster, not significantly
+                        prevScreenAtNowView = self.mtiQueue[-i].img[
+                            roi[1] : roi[3], roi[0] : roi[2]
+                        ]
+                prevScreenAtNowViewList.append(prevScreenAtNowView)
+            prevsignal = np.array(prevScreenAtNowViewList)
+            delta = np.max(
+                np.max(prevsignal, axis=0) - np.min(prevsignal, axis=0), axis=-1
+            )
+            # delta = np.max(np.std(prevsignal, axis=0), axis=-1)
             ret = self.filter(delta)
         self.mtiQueue.push__pop_if_full(MtiFilter.MtiFrame(img, cammotion))
         return ret
