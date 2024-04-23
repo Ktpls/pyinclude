@@ -6,6 +6,13 @@ import platform
 import os
 
 
+def getDevice():
+    print(getDeviceInfo())
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using {device} device")
+    return device
+
+
 def getDeviceInfo():
     try:
         import psutil
@@ -82,6 +89,23 @@ class nestedPyPlot:
         return ax
 
 
+class MassivePicturePlot:
+    def __init__(self, plotShape, fig=None):
+        self.plotShape = plotShape
+        self.fig = fig if fig else plt.figure(figsize=(20, 20))
+        self.i = 1
+
+    def toNextPlot(self) -> plt.Axes:
+        if self.isFull():
+            raise IndexError("Too many pictures")
+        ax = self.fig.add_subplot(self.plotShape[1], self.plotShape[0], self.i)
+        self.i += 1
+        return ax
+
+    def isFull(self):
+        return self.i > np.prod(self.plotShape)
+
+
 def NewPyPlotAxis():
     fig, ax = plt.subplots()
     return ax
@@ -101,6 +125,11 @@ def setModule(model, path=None, device=None):
         print(f"Loading existed nn {path}")
         model.load_state_dict(torch.load(path, map_location=torch.device(device)))
     return model.to(device)
+
+
+def savemodel(model: torch.nn.Module, path):
+    torch.save(model.state_dict(), path)
+    print(f"Saved PyTorch Model State to {path}")
 
 
 def tensorimg2ndarray(m):
@@ -257,16 +286,23 @@ class inception(torch.nn.Module):
 
 
 class res_through(torch.nn.Module):
+    class Combiner:
+        @staticmethod
+        def add(last, current):
+            return last + current
 
-    def __init__(self, *components, combiner=None) -> None:
+        class concat:
+            def __init__(self, dim=1):
+                self.dim = dim
+
+            def __call__(self, last, current):
+                return torch.concat([last, current], dim=self.dim)
+
+    def __init__(self, *components, combiner: "res_through.Combiner" = None) -> None:
         super().__init__()
         self.seq = torch.nn.Sequential(*components)
         if combiner is None:
-
-            def combiner_add(last, current):
-                return last + current
-
-            combiner = combiner_add
+            combiner = res_through.Combiner.add
         self.combiner = combiner
 
     def forward(self, m):
@@ -315,7 +351,7 @@ class trainpipe:
     def train(
         dataloader,
         optimizer,
-        calcLossFoo,
+        trainmainprogress,
         epochnum=10,
         outputperbatchnum=100,
         customSubOnOutput=None,
@@ -328,7 +364,7 @@ class trainpipe:
 
             # train
             for batch, datatuple in enumerate(dataloader):
-                loss = calcLossFoo(batch, datatuple)
+                loss = trainmainprogress(datatuple)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -352,3 +388,29 @@ def ModuleArgDistribution(mod: torch.nn.Module):
     return "\n".join(
         [f"{k}: {v.numel()}" for k, v in mod.named_parameters() if v.requires_grad]
     )
+
+
+class ConvBnHs(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size=3,
+        stride=1,
+        padding="same",
+        ifBn=True,
+    ):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels, out_channels, kernel_size, stride=stride, padding=padding
+        )
+        self.bn = torch.nn.BatchNorm2d(out_channels) if ifBn else None
+        self.ifBn = ifBn
+        self.hs = torch.nn.Hardswish()
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.bn is not None:
+            x = self.bn(x)
+        x = self.hs(x)
+        return x
