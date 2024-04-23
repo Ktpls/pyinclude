@@ -343,6 +343,7 @@ class MotionEstimator:
     lastScreen: np.ndarray = dataclasses.field(init=False, default=None)
 
     def cameramotion(self, newScreen, subsamplerate=1):
+        identity = np.array([[1, 0, 0], [0, 1, 0]], np.float32)
         prev_pts = cv.goodFeaturesToTrack(
             self.lastScreen,
             maxCorners=100,
@@ -352,7 +353,7 @@ class MotionEstimator:
             mask=self.mask,
         )
         if prev_pts is None:
-            raise Exception("No point to track")
+            return [], identity
 
         # Calculate optical flow (i.e. track feature points)
         curr_pts, status, err = cv.calcOpticalFlowPyrLK(
@@ -365,7 +366,7 @@ class MotionEstimator:
         # Filter only valid points
         idx = np.where(status == 1)[0]
         if idx.size == 0:
-            return curr_pts, [[1, 0, 0], [0, 1, 0]]
+            return curr_pts, identity
         prev_pts = prev_pts[idx]
         curr_pts = curr_pts[idx]
         prev_pts = prev_pts / subsamplerate
