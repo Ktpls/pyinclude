@@ -384,12 +384,6 @@ class trainpipe:
         print("Done!")
 
 
-def ModuleArgDistribution(mod: torch.nn.Module):
-    return "\n".join(
-        [f"{k}: {v.numel()}" for k, v in mod.named_parameters() if v.requires_grad]
-    )
-
-
 class ConvBnHs(torch.nn.Module):
     def __init__(
         self,
@@ -414,3 +408,35 @@ class ConvBnHs(torch.nn.Module):
             x = self.bn(x)
         x = self.hs(x)
         return x
+
+
+class OneShotAggregationResThrough(torch.nn.Module):
+    def __init__(self, *components, chanTotal, chanDest) -> None:
+        super().__init__()
+        self.seq = torch.nn.Sequential(*components)
+        self.combiner = torch.nn.Conv2d(chanTotal, chanDest, 1)
+
+    def forward(self, m):
+        o = [m]
+        t = m
+        for i, l in enumerate(self.seq):
+            t = l(t)
+            o.append(t)
+        o = self.combiner(torch.concat(o, dim=1))
+        return o
+
+
+class ModuleFunc(torch.nn.Module):
+    def __init__(self, func):
+        super().__init__()
+        self.func = func
+
+    def forward(self, x):
+        return self.func(x)
+
+
+def ModuleArgDistribution(mod: torch.nn.Module, OnlyWithGrad: bool = True):
+    cond = (lambda v: v.requires_grad) if OnlyWithGrad else (lambda v: True)
+    return "\n".join(
+        [f"{k}: {v.numel()}" for k, v in mod.named_parameters() if cond(v)]
+    )
