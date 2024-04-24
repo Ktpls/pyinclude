@@ -299,6 +299,7 @@ def isKBDownNow(k):
     return win32api.GetAsyncKeyState(k) and 0x8000
 
 
+@Singleton
 class TranslateHotKey:
     dct = {
         win32con.VK_CONTROL: "Ctrl",
@@ -348,8 +349,11 @@ class TranslateHotKey:
     def __call__(k):
         if (k >= ord("A") and k <= ord("Z")) or (k >= ord("0") and k <= ord("9")):
             return chr(k)
-        assert k in TranslateHotKey.dct, "unknown key"
-        return TranslateHotKey.dct[k]
+        # assert k in TranslateHotKey.dct, "unknown key"
+        if k in TranslateHotKey.dct:
+            return TranslateHotKey.dct[k]
+        else:
+            return f"KeyCode{k}"
 
 
 class HotkeyManager:
@@ -835,3 +839,13 @@ class WifiRefresher:
 
     def setOff(self):
         subprocess.Popen(f"netsh wlan disconnect")
+
+
+def make_filename_safe(filename):
+    # Remove any characters that are not allowed in a filename
+    filename = re.sub(r'[<>:"/\\|?*\r\n]', "_", filename)
+
+    # Replace any consecutive invalid characters with a single underscore
+    # filename = re.sub(r'(.)\1+', r'\1', filename)
+
+    return filename

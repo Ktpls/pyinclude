@@ -324,7 +324,7 @@ class StoppableThread(StoppableSomewhat):
     """
     derivate from it and override foo()
     """
-
+    # TODO give option to handle error by user. thats for wtutily system to log error
     def __init__(
         self,
         strategy_runonrunning: "StoppableSomewhat.StrategyRunOnRunning" = None,
