@@ -1500,11 +1500,14 @@ class perf_statistic:
         return self
 
     def stop(self):
-        if self._starttime is None:
+        if not self.isRunning():
             return self
         self._stagedtime += self._timeCurrentlyCounting()
         self._starttime = None
         return self
+
+    def isRunning(self):
+        return self._starttime is not None
 
     def time(self):
         return self._stagedtime + self._timeCurrentlyCounting()
@@ -1514,7 +1517,7 @@ class perf_statistic:
 
     def _timeCurrentlyCounting(self):
         return (
-            time.perf_counter() - self._starttime if self._starttime is not None else 0
+            time.perf_counter() - self._starttime if self.isRunning() else 0
         )
 
 
