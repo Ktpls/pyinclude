@@ -494,55 +494,47 @@ virtualKeyCode2ScanCode = {
     win32conComp.VK_OEM_CLEAR: 0,
 }
 import dataclasses
-from ctypes import (
-    POINTER,
-    c_ulong,
-    Structure,
-    c_ushort,
-    c_short,
-    c_long,
-    byref,
-    windll,
-    pointer,
-    sizeof,
-    Union,
-)
+import ctypes
 
 SendInput = windll.user32.SendInput
-PUL = POINTER(c_ulong)
 
 
-class KeyBdInput(Structure):
+
+class KeyBdInput(ctypes.Structure):
     _fields_ = [
-        ("wVk", c_ushort),
-        ("wScan", c_ushort),
-        ("dwFlags", c_ulong),
-        ("time", c_ulong),
-        ("dwExtraInfo", PUL),
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
     ]
 
 
-class HardwareInput(Structure):
-    _fields_ = [("uMsg", c_ulong), ("wParamL", c_short), ("wParamH", c_ushort)]
-
-
-class MouseInput(Structure):
+class HardwareInput(ctypes.Structure):
     _fields_ = [
-        ("dx", c_long),
-        ("dy", c_long),
-        ("mouseData", c_ulong),
-        ("dwFlags", c_ulong),
-        ("time", c_ulong),
-        ("dwExtraInfo", PUL),
+        ("uMsg", ctypes.c_ulong),
+        ("wParamL", ctypes.c_short),
+        ("wParamH", ctypes.c_ushort),
     ]
 
 
-class Input_I(Union):
+class MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class Input_I(ctypes.Union):
     _fields_ = [("ki", KeyBdInput), ("mi", MouseInput), ("hi", HardwareInput)]
 
 
-class Input(Structure):
-    _fields_ = [("type", c_ulong), ("ii", Input_I)]
+class Input(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong), ("ii", Input_I)]
 
 
 # Actuals Functions
@@ -550,69 +542,85 @@ class Input(Structure):
 
 @Singleton
 class Vk2Sk:
-    def __init__(self):
-        from . import virtualKeyCode2ScanCode
-
-        self.d = virtualKeyCode2ScanCode.virtualKeyCode2ScanCode
-
     def tr(self, vk):
-        return self.d.get(vk, 0)
+        return virtualKeyCode2ScanCode.get(vk, 0)
 
 
-def KeyDown(hexKeyCode):
-    extra = c_ulong(0)
-    ii_ = Input_I()
-    ii_.ki = KeyBdInput(0, Vk2Sk().tr(hexKeyCode), 0x0008, 0, pointer(extra))
-    x = Input(c_ulong(1), ii_)
-    windll.user32.SendInput(1, pointer(x), sizeof(x))
+class Keyboard:
 
+    @staticmethod
+    def KeyDown(hexKeyCode):
+        extra = ctypes.c_ulong(0)
+        ii_ = Input_I()
+        ii_.ki = KeyBdInput(0, Vk2Sk().tr(hexKeyCode), 0x0008, 0, ctypes.pointer(extra))
+        x = Input(ctypes.c_ulong(1), ii_)
+        windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
 
-def KeyUp(hexKeyCode):
-    extra = c_ulong(0)
-    ii_ = Input_I()
-    ii_.ki = KeyBdInput(0, Vk2Sk().tr(hexKeyCode), 0x0008 | 0x0002, 0, pointer(extra))
-    x = Input(c_ulong(1), ii_)
-    windll.user32.SendInput(1, pointer(x), sizeof(x))
+    @staticmethod
+    def KeyUp(hexKeyCode):
+        extra = ctypes.c_ulong(0)
+        ii_ = Input_I()
+        ii_.ki = KeyBdInput(
+            0, Vk2Sk().tr(hexKeyCode), 0x0008 | 0x0002, 0, ctypes.pointer(extra)
+        )
+        x = Input(ctypes.c_ulong(1), ii_)
+        windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
 
+    @staticmethod
+    def KeyHold(k, t):
+        Keyboard.KeyDown(k)
+        PreciseSleep(t)
+        Keyboard.KeyUp(k)
 
-import pyautogui
+    @staticmethod
+    def KeyPress(k, interval=0.1):
+        Keyboard.KeyHold(k, interval)
 
+    @staticmethod
+    def KeyDownDelay(k):
+        Keyboard.KeyDown(k)
+        PreciseSleep(0.1)
 
-def KeyHold(k, t):
-    KeyDown(k)
-    PreciseSleep(t)
-    KeyUp(k)
+    @staticmethod
+    def KeyUpDelay(k):
+        Keyboard.KeyUp(k)
+        PreciseSleep(0.1)
 
+    @staticmethod
+    def KeyPressDelay(k):
+        Keyboard.KeyDown(k)
+        PreciseSleep(0.1)
+        Keyboard.KeyUp(k)
+        PreciseSleep(0.1)
 
-def KeyPress(k, interval=0.1):
-    KeyHold(k, interval)
+    @dataclasses.dataclass
+    class HoldingKey:
+        key: int
 
+        def __enter__(self):
+            Keyboard.KeyDown(self.key)
 
-def key_down(k):
-    KeyDown(k)
-    PreciseSleep(0.1)
+        def __exit__(self, exc_type, exc_value, traceback):
+            Keyboard.KeyUp(self.key)
 
+    class FunctionalKey:
+        key: list[int]
 
-def key_up(k):
-    KeyUp(k)
-    PreciseSleep(0.1)
+        def __init__(self, key: int | list[int]) -> None:
+            self.key = NormalizeIterableOrSingleArgToIterable(key)
+            assert len(self.key) >= 1
 
+        def hold(self, holdTime):
+            for k in self.key:
+                Keyboard.KeyDown(k)
+            PreciseSleep(holdTime)
+            for k in reversed(self.key):
+                Keyboard.KeyUp(k)
 
-def key_press(k):
-    KeyDown(k)
-    PreciseSleep(0.2)
-    KeyUp(k)
-
-
-@dataclasses.dataclass
-class HoldingKey:
-    key: int
-
-    def __enter__(self):
-        KeyDown(self.key)
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        KeyUp(self.key)
+        def press(self, pressTime=None):
+            if pressTime is None:
+                pressTime = 0.05
+            self.hold(pressTime)
 
 
 def moveto(p):
@@ -678,23 +686,3 @@ def click(p):
     time.sleep(0.01)
     mouseup()
     time.sleep(0.1)
-
-
-class FunctionalKey:
-    key: list[int]
-
-    def __init__(self, key: int | list[int]) -> None:
-        self.key = NormalizeIterableOrSingleArgToIterable(key)
-        assert len(self.key) >= 1
-
-    def hold(self, holdTime):
-        for k in self.key:
-            KeyDown(k)
-        PreciseSleep(holdTime)
-        for k in reversed(self.key):
-            KeyUp(k)
-
-    def press(self, pressTime=None):
-        if pressTime is None:
-            pressTime = 0.05
-        self.hold(pressTime)
