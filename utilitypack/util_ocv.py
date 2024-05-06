@@ -47,17 +47,39 @@ def savematflt(m, multiplier=255, name=None, path=None):
     savemat(multiplier * m, name, path)
 
 
-def regionsum(m, size, mask=None):
+def normalizeMask(mask: np.ndarray, expectedShape: tuple[int, ...]) -> np.ndarray:
+    """Normalize the given mask.
+
+    Args:
+        mask (np.ndarray): The mask to normalize.
+        expectedShape (Tuple[int, ...]): The expected shape of the mask.
+
+    Returns:
+        np.ndarray: The normalized mask.
+    """
+    if mask is None:
+        mask = np.ones(expectedShape, dtype=np.float32)
+    else:
+        if len(expectedShape) > 2 and len(expectedShape) > len(
+            mask.shape
+        ):  # channel forgotten in mask
+            mask = np.expand_dims(mask, -1)
+        if mask.dtype in (np.bool_, "bool"):
+            mask = mask.astype(np.float32)
+        else:
+            mask = np.where(mask > 0, 1.0, 0.0)
+    return mask
+
+
+def regionsum(m: np.ndarray, size, mask=None):
     if m.size <= 0:
         return m
-    if mask is not None:
-        mask[mask > 0] = 1
-    if len(m.shape) > 2 and mask is not None:  # with channel dim
-        mask = mask.reshape(mask.shape + (1,))
-    return cv.filter2D(m if mask is None else m * mask, -1, np.ones(size, np.float32))
+    m = m.astype(np.float32)
+    mask = normalizeMask(mask, m.shape)
+    return cv.filter2D(m * mask, -1, np.ones(size, np.float32))
 
 
-def regionave(m, size, mask=None, notConsiderMaskInDenominator=True):
+def regionave(m, size, mask=None):
     """
     if notConsiderMaskInDenominator:
     denominator will not consider mask and boundary and be size[0]*size[1]
@@ -69,16 +91,8 @@ def regionave(m, size, mask=None, notConsiderMaskInDenominator=True):
 
     if m.size <= 0:
         return m
-    if mask is not None:
-        mask = np.copy(mask)
-        mask[mask > 0] = 1
-    if mask is None or notConsiderMaskInDenominator:
-        denominator = size[0] * size[1]
-    else:
-        denominator = regionsum(mask, size) + 0.01
-        if len(m.shape) > 2:  # m with channel dim
-            denominator = denominator.reshape(denominator.shape + (1,))
-    return regionsum(m, size, mask) / denominator
+    mask = normalizeMask(mask, m.shape)
+    return regionsum(m, size, mask) / (regionsum(mask, size) + EPS)
 
 
 def density(p, size):

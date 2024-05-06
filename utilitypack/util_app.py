@@ -10,6 +10,7 @@ class BulletinApp:
         bulletinoutputpos=None,
         fps=None,
         threadpool=None,
+        config=None,
     ):
         def replaceNone(val, default_val):
             return val if val is not None else default_val
@@ -30,6 +31,7 @@ class BulletinApp:
         fps = replaceNone(fps, 10)
 
         threadpool = replaceNone(threadpool, ThreadPoolExecutor(max_workers=10))
+        self.config=replaceNone(config, dict())
 
         seed = time.strftime("%Y-%m-%d", time.localtime()).encode("utf-8")
         seed = hashlib.md5(seed).digest()
