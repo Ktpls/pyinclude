@@ -422,7 +422,7 @@ class Port8111:
             response = requests.get(
                 "http://127.0.0.1:8111/" + queryType.getPath(),
                 params=param,
-                timeout=timeout if timeout is not None else 0.5,
+                timeout=Coalesce(timeout, 0.5),
             )
         except (requests.ConnectionError, requests.ReadTimeout):
             return None
@@ -461,9 +461,7 @@ class Port8111Cache:
 
     def __init__(self, fetch8111Interval=None) -> None:
         self.typeCache = dict()
-        self.fetch8111Interval = (
-            fetch8111Interval if fetch8111Interval is not None else 1
-        )
+        self.fetch8111Interval = Coalesce(fetch8111Interval, 1)
 
     def get(self, queryType: Port8111.QueryType, newest=None):
         if queryType not in self.typeCache:

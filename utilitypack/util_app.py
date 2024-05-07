@@ -13,7 +13,7 @@ class BulletinApp:
         config=None,
     ):
         def replaceNone(val, default_val):
-            return val if val is not None else default_val
+            return Coalesce(val, default_val)
 
         idlebulletincontents = replaceNone(
             idlebulletincontents,

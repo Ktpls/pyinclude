@@ -128,7 +128,7 @@ def EasyWrapper(wrappedLogic=None):
             use this instead
                 @someClassInstance.methodDecorator()
                 def foo(func_arg): .
-
+    somehow buggy but works almost fine
     ###############
     note that python design is piece of shlt
     ###############
@@ -335,9 +335,7 @@ class StoppableThread(StoppableSomewhat):
         super().__init__(strategy_runonrunning, strategy_error)
         self.running: bool = False
         self.stopsignal: bool = True
-        self.pool: ThreadPoolExecutor = (
-            pool if pool is not None else ThreadPoolExecutor()
-        )
+        self.pool: ThreadPoolExecutor = Coalesce(pool, ThreadPoolExecutor())
         self.submit = None
         self.result = None
 
@@ -1419,9 +1417,7 @@ class expparser:
         @staticmethod
         def OptionalFunc(defaultParam: list, func: typing.Callable):
             def newFunc(*param):
-                newParam = [
-                    a if a is not None else d for a, d in zip(param, defaultParam)
-                ]
+                newParam = [Coalesce(a, d) for a, d in zip(param, defaultParam)]
                 if len(param) < len(defaultParam):
                     newParam.extend(defaultParam[len(param) :])
                 expparser.Utils.NonOptional.checkParamListIfNonOptional(newParam)
@@ -1835,9 +1831,9 @@ class AccessibleQueue:
             return [
                 self[j]
                 for j in range(
-                    i.start if i.start is not None else 0,
-                    i.stop if i.stop is not None else self._cursize,
-                    i.step if i.step is not None else 1,
+                    Coalesce(i.start, 0),
+                    Coalesce(i.stop, self._cursize),
+                    Coalesce(i.step, 1),
                 )
             ]
 
