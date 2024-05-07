@@ -12,10 +12,7 @@ class BulletinApp:
         threadpool=None,
         config=None,
     ):
-        def replaceNone(val, default_val):
-            return Coalesce(val, default_val)
-
-        idlebulletincontents = replaceNone(
+        idlebulletincontents = Coalesce(
             idlebulletincontents,
             [
                 ["(*≧ω≦)", 66],
@@ -26,12 +23,12 @@ class BulletinApp:
                 ["(OvO)", 1],
             ],
         )
-        bulletinoutputpos = replaceNone(bulletinoutputpos, (100, 500))
+        bulletinoutputpos = Coalesce(bulletinoutputpos, (100, 500))
 
-        fps = replaceNone(fps, 10)
+        fps = Coalesce(fps, 10)
 
-        threadpool = replaceNone(threadpool, ThreadPoolExecutor(max_workers=10))
-        self.config=replaceNone(config, dict())
+        threadpool = Coalesce(threadpool, ThreadPoolExecutor(max_workers=10))
+        self.config = Coalesce(config, dict())
 
         seed = time.strftime("%Y-%m-%d", time.localtime()).encode("utf-8")
         seed = hashlib.md5(seed).digest()
@@ -98,7 +95,7 @@ class BulletinApp:
         self.hkm = HotkeyManager(self.hotkeytask)
         self.hud.setup()
         # activeWindow(self.hud.hwnd)
-        
+
         # main loop
         while True:
             self.fpsm.WaitUntilNextFrame()
