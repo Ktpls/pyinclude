@@ -446,28 +446,30 @@ class Port8111:
 
 
 @Singleton
-@AnnotationUtil.Annotation(fetch8111Interval=1)
 class Port8111Cache:
     typeCache: "dict[Port8111.QueryType, Port8111Cache.SingleTypeCache]"
 
     class SingleTypeCache(Cache):
         queryType: Port8111.QueryType
 
-        def __init__(self, queryType):
+        def __init__(self, queryType, fetch8111Interval) -> None:
             super().__init__(
                 toFetch=lambda: Port8111.get(queryType),
-                updateStrategey=Cache.UpdateStrategey.Outdated(
-                    AnnotationUtil.getAnnotations(Port8111Cache).fetch8111Interval
-                ),
+                updateStrategey=Cache.UpdateStrategey.Outdated(fetch8111Interval),
             )
             self.queryType = queryType
 
-    def __init__(self) -> None:
+    def __init__(self, fetch8111Interval=None) -> None:
         self.typeCache = dict()
+        self.fetch8111Interval = (
+            fetch8111Interval if fetch8111Interval is not None else 1
+        )
 
     def get(self, queryType: Port8111.QueryType, newest=None):
         if queryType not in self.typeCache:
-            self.typeCache[queryType] = self.SingleTypeCache(queryType)
+            self.typeCache[queryType] = self.SingleTypeCache(
+                queryType, self.fetch8111Interval
+            )
         return self.typeCache[queryType].get(newest=newest)
 
 

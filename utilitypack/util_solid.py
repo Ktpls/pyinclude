@@ -324,6 +324,7 @@ class StoppableThread(StoppableSomewhat):
     """
     derivate from it and override foo()
     """
+
     # TODO give option to handle error by user. thats for wtutily system to log error
     def __init__(
         self,
@@ -1516,9 +1517,7 @@ class perf_statistic:
         return self.time() / (self._cycle if self._cycle > 0 else 1)
 
     def _timeCurrentlyCounting(self):
-        return (
-            time.perf_counter() - self._starttime if self.isRunning() else 0
-        )
+        return time.perf_counter() - self._starttime if self.isRunning() else 0
 
 
 class FpsManager:
@@ -2052,16 +2051,35 @@ class AnnotationUtil:
     @staticmethod
     @EasyWrapper
     def Annotation(obj, **kwargs):
+        return AnnotationUtil.AnnotationWithAnyKeyType(obj, kwargs)
+
+    @staticmethod
+    @EasyWrapper
+    def AnnotationWithAnyKeyType(obj, annoDict: dict):
         if AnnotationUtil.__checkAnnoNonexisted(obj):
             obj.__ExtraAnnotations__ = dict()
-        obj.__ExtraAnnotations__.update(kwargs)
+        obj.__ExtraAnnotations__.update(annoDict)
         return obj
 
     @staticmethod
-    def getAnnotations(obj):
+    def getAnnotationDict(obj):
         if AnnotationUtil.__checkAnnoNonexisted(obj):
-            return DictAsAnObject(dict())
-        return DictAsAnObject(obj.__ExtraAnnotations__)
+            return dict()
+        return obj.__ExtraAnnotations__
+
+    @staticmethod
+    def getAnnotation(obj):
+        return DictAsAnObject(AnnotationUtil.getAnnotationDict(obj))
+
+    @staticmethod
+    @EasyWrapper
+    def AnnotationClass(cls):
+        def newCall(self, foo):
+            AnnotationUtil.AnnotationWithAnyKeyType({cls: self})(foo)
+            return foo
+
+        cls.__call__ = newCall
+        return cls
 
 
 class Cache:
