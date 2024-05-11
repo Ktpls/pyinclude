@@ -759,12 +759,16 @@ class expparser:
             tipe = f"{indent}{self.type}, "
             if self.type == expparser.evaluator.EvalType.lyst:
                 val = f"list\n"
-                child = "".join([p.__repr__(indentLvl + 1) for p in self.value])
+                child = "".join(
+                    [p.__repr__(indentLvl=indentLvl + 1) for p in self.value]
+                )
             else:
                 val = f"{self.value}\n"
                 child = ""
                 if self.para is not None:
-                    child = "".join([p.__repr__(indentLvl + 1) for p in self.para])
+                    child = "".join(
+                        [p.__repr__(indentLvl=indentLvl + 1) for p in self.para]
+                    )
                 else:
                     child = ""
             return tipe + val + child
@@ -1146,26 +1150,39 @@ class expparser:
             nonlocal tokenList, oprRisingBeginPosList
             # cache the section to use easily pop and push
             section = tokenList[begin:end]
-            while True:
-                # cleaning backwards, which makes it right-nested as a tree
-                # backwards is actually for unary operators
-                if len(section) == 1:
-                    break
-                val2 = section.pop()
-                assert val2.type == expparser._TokenType.NUMLIKE
-                opr = section.pop()
-                assert opr.type == expparser._TokenType.OPR
-                if opr.value.isUnary():
-                    val2.value = expparser.evaluator.ofOpr(opr.value, [val2.value])
-                    section.append(val2)
-                else:
-                    val1 = section.pop()
-                    assert val1.type == expparser._TokenType.NUMLIKE
-                    val1.value = expparser.evaluator.ofOpr(
-                        opr.value, [val1.value, val2.value]
+            token1st = section[0]
+            if token1st.type == expparser._TokenType.OPR:
+                assert token1st.value.isUnary()
+                # assert unary operators are never at the same priority as other multioperand operators,
+                # so i can deal them seperately
+                val = section[-1]
+                assert val.type == expparser._TokenType.NUMLIKE
+                i = len(section) - 2
+                while True:
+                    # cleaning backwards, which makes it right-nested as a tree
+                    if i < 0:
+                        break
+                    opr = section[i]
+                    i -= 1
+                    assert opr.type == expparser._TokenType.OPR
+                    assert opr.value.isUnary()
+                    val.value = expparser.evaluator.ofOpr(opr.value, [val.value])
+            else:
+                i = 0
+                val = section[0]
+                i += 1
+                while True:
+                    if i >= len(section):
+                        break
+                    opr = section[i]
+                    i += 1
+                    assert i < len(section)
+                    val2 = section[i]
+                    i += 1
+                    val.value = expparser.evaluator.ofOpr(
+                        opr.value, [val.value, val2.value]
                     )
-                    section.append(val1)
-            tokenList = tokenList[:begin] + section + tokenList[end:]
+            tokenList = tokenList[:begin] + [val] + tokenList[end:]
             RemapToken()
             oprRisingBeginPosList.pop()
 
@@ -1397,7 +1414,7 @@ class expparser:
         )
 
     @staticmethod
-    def compile(s):
+    def compile(s) -> evaluator:
         return expparser._expparse_recursive__comma_collector_wrapper(s).val
 
     class Utils:
