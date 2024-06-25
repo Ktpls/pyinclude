@@ -130,8 +130,9 @@ class fullScrHUD:
     hud.stop()
     """
 
-    def __init__(self) -> None:
-        self.resolution = [1080, 1920]
+    def __init__(self, rect=[0, 0, 1920, 1080]) -> None:
+        self.rect = rect
+        self.wh = [rect[2] - rect[0], rect[3] - rect[1]]
         self.terminate = False
         self.hwnd = 0
         self.m2show = self.getblankscreenwithalfa()
@@ -149,8 +150,9 @@ class fullScrHUD:
                 # win32gui.FillRect(hdc,rect,hbr)
                 # win32gui.DeleteObject(hbr)
 
-                w = self.resolution[1]
-                h = self.resolution[0]
+                x0, y0, x1, y1 = self.rect
+                w = x1 - x0
+                h = y1 - y0
                 mfcDC = win32ui.CreateDCFromHandle(hdc)
                 hcdc = mfcDC.CreateCompatibleDC()
                 BitMap = win32ui.CreateBitmap()
@@ -183,14 +185,16 @@ class fullScrHUD:
             wc.lpfnWndProc = WndProc
             reg = win32gui.RegisterClass(wc)
 
+            x0, y0, x1, y1 = self.rect
+            w, h = self.wh
             hwnd = win32gui.CreateWindow(
                 reg,
                 "Python",
                 win32con.WS_POPUP,
-                0,
-                0,
-                self.resolution[1],
-                self.resolution[0],
+                x0,
+                y0,
+                w,
+                h,
                 0,
                 0,
                 0,
@@ -230,10 +234,10 @@ class fullScrHUD:
 
     @FunctionalWrapper
     def writecontent(self, lt, content):
-        if content.shape[0] > self.resolution[0] - lt[0]:
-            content = content[: self.resolution[0] - lt[0], :, :]
-        if content.shape[1] > self.resolution[1] - lt[1]:
-            content = content[:, : self.resolution[1] - lt[1], :]
+        if content.shape[0] > self.wh[1] - lt[0]:
+            content = content[: self.wh[1] - lt[0], :, :]
+        if content.shape[1] > self.wh[0] - lt[1]:
+            content = content[:, : self.wh[0] - lt[1], :]
         self.m2draw[
             lt[0] : lt[0] + content.shape[0],
             lt[1] : lt[1] + content.shape[1],
@@ -255,8 +259,9 @@ class fullScrHUD:
 
     def getblankscreenwithalfa(self):
         return np.zeros(
-            self.resolution
-            + [
+            [
+                self.wh[1],
+                self.wh[0],
                 4,
             ],
             np.uint8,
