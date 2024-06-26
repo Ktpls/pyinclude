@@ -107,12 +107,11 @@ class BulletinApp:
         strategy_error = strategy_error or StoppableSomewhat.StrategyError.print_error
 
         return StoppableSomewhat.EasyUse(
-            foo,
             pool=pool,
             implType=implType,
             strategy_runonrunning=strategy_runonrunning,
             strategy_error=strategy_error,
-        )
+        )(foo)
 
     @EasyWrapper
     def Business(foo, self: "BulletinApp", period=None):
