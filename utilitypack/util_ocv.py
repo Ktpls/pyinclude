@@ -487,7 +487,7 @@ class MtiFilter:
             desiredImgShape = np.flip(img.shape[:2])
         else:
             cutRoiShift = AffineMats.shift(-roi[0], -roi[1])
-            desiredImgShape = np.flip(np.array(roi[2:]) - np.array(roi[:2]))
+            desiredImgShape = (np.array(roi[2:]) - np.array(roi[:2]))
 
         if self.mtiQueue.isEmpty():
             ret = None

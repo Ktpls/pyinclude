@@ -3,6 +3,34 @@ import traceback
 import hashlib
 
 
+@dataclasses.dataclass
+class TaskScheduleing:
+    task: typing.Callable
+    period: float
+    lasttime: float = None
+
+    class State(enum.Enum):
+        RUNNING = 1
+        STOPPED = 2
+
+    state: State = State.RUNNING
+
+    def stop(self):
+        self.state = TaskScheduleing.State.STOPPED
+        self.lasttime = None
+
+    def start(self):
+        self.state = TaskScheduleing.State.RUNNING
+
+    def check(self, nowtime):
+        if self.state != TaskScheduleing.State.RUNNING:
+            return
+        if self.lasttime is not None and nowtime - self.lasttime < self.period:
+            return
+        self.lasttime = nowtime
+        self.task()
+
+
 class BulletinApp:
     def __init__(
         self,
@@ -11,6 +39,8 @@ class BulletinApp:
         fps=None,
         threadpool=None,
         config=None,
+        hudFps=None,
+        bulletinFps=None,
     ):
         idlebulletincontents = Coalesce(
             idlebulletincontents,
@@ -29,6 +59,8 @@ class BulletinApp:
 
         threadpool = Coalesce(threadpool, ThreadPoolExecutor(max_workers=10))
         self.config = Coalesce(config, dict())
+        self.hudFps = Coalesce(hudFps, 10)
+        self.bulletinFps = Coalesce(bulletinFps, 10)
 
         seed = time.strftime("%Y-%m-%d", time.localtime()).encode("utf-8")
         seed = hashlib.md5(seed).digest()
@@ -45,13 +77,6 @@ class BulletinApp:
 
         self.threadpool = threadpool
 
-        self.AsyncLongScript = functools.partial(
-            StoppableSomewhat.EasyUse,
-            pool=self.threadpool,
-            implType=StoppableThread,
-            strategy_runonrunning=StoppableSomewhat.StrategyRunOnRunning.stop_and_rerun,
-            strategy_error=StoppableSomewhat.StrategyError.print_error,
-        )
         self.hud: fullScrHUD = fullScrHUD()
 
         def swapHKM(newHkm):
@@ -61,14 +86,37 @@ class BulletinApp:
 
         self.inputSession = HotkeyManager.InputSession(swapHKM, self.bulletin)
 
-        self.business: list = list()
-        self.hotkeytask: list = list()
+        self.business: list[TaskScheduleing] = list()
+        self.hotkeytask: list[HotkeyManager.hotkeytask] = list()
         self.hkm = None
         self.bulletinoutputpos = bulletinoutputpos
 
+    def Async(
+        foo,
+        self: "BulletinApp",
+        strategy_runonrunning=None,
+        strategy_error=None,
+    ):
+        pool = self.threadpool
+        implType = StoppableThread
+        strategy_runonrunning = (
+            strategy_runonrunning
+            or StoppableSomewhat.StrategyRunOnRunning.stop_and_rerun
+        )
+        strategy_error = strategy_error or StoppableSomewhat.StrategyError.print_error
+
+        return StoppableSomewhat.EasyUse(
+            foo,
+            pool=pool,
+            implType=implType,
+            strategy_runonrunning=strategy_runonrunning,
+            strategy_error=strategy_error,
+        )
+
     @EasyWrapper
-    def Business(foo, self: "BulletinApp"):
-        self.business.append(foo)
+    def Business(foo, self: "BulletinApp", period=None):
+        period = period or 0.1
+        self.business.append(TaskScheduleing(task=foo, period=period))
         return foo
 
     @EasyWrapper
@@ -80,26 +128,27 @@ class BulletinApp:
         return foo
 
     def go(self):
-        @self.Business()
-        def showBulletinAndUpdateHud():
-            # show bulletin
-            self.hud.writecontent(
-                np.flip(self.bulletinoutputpos),
-                aPicWithTextWithPil(
-                    self.bulletin.read(), maxsize=[400, 700], lineinterval=0
-                ),
+        bulletinMaxSize = [400, 700]
+        bulletinRegion = self.hud.addRegion(fullScrHUD.Region(self.bulletinoutputpos))
+
+        @self.Business(period=1 / self.bulletinFps)
+        def showBulletin():
+            bulletinRegion.content = aPicWithTextWithPil(
+                self.bulletin.read(), bulletinMaxSize, lineinterval=0
             )
 
+        @self.Business(period=1 / self.hudFps)
+        def UpdateHud():
             self.hud.update()
 
         self.hkm = HotkeyManager(self.hotkeytask)
         self.hud.setup()
+        timer = perf_statistic().start()
         # activeWindow(self.hud.hwnd)
 
         # main loop
         while True:
             self.fpsm.WaitUntilNextFrame()
-            self.hud.clear()
 
             decideresult = self.hkm.decideAllHotKey()
 
@@ -115,7 +164,7 @@ class BulletinApp:
 
             for bus in self.business:
                 try:
-                    bus()
+                    bus.check(timer.time())
                 except Exception as e:
                     Rhythms.Error.play()
                     print("#" * 10)

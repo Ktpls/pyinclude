@@ -105,6 +105,21 @@ def setadmin(file):
         exit()
 
 
+class RectUtil:
+    @staticmethod
+    def Ltwh2X1Y1X2Y2(ltwh):
+        return [ltwh[0], ltwh[1], ltwh[0] + ltwh[2], ltwh[1] + ltwh[3]]
+
+    @staticmethod
+    def X1Y1X2Y2toLtwh(x1y1x2y2):
+        return [
+            x1y1x2y2[0],
+            x1y1x2y2[1],
+            x1y1x2y2[2] - x1y1x2y2[0],
+            x1y1x2y2[3] - x1y1x2y2[1],
+        ]
+
+
 class fullScrHUD:
     """
     #init
@@ -130,6 +145,11 @@ class fullScrHUD:
     hud.stop()
     """
 
+    @dataclasses.dataclass
+    class Region:
+        lt: typing.List[int]
+        content: np.ndarray = None
+
     def __init__(self, rect=[0, 0, 1920, 1080]) -> None:
         self.rect = rect
         self.wh = [rect[2] - rect[0], rect[3] - rect[1]]
@@ -137,7 +157,12 @@ class fullScrHUD:
         self.hwnd = 0
         self.m2show = self.getblankscreenwithalfa()
         self.m2draw = self.getblankscreenwithalfa()
+        self.regions: list[fullScrHUD.Region] = []
         # set m2draw
+
+    def addRegion(self, region: Region):
+        self.regions.append(region)
+        return region
 
     @FunctionalWrapper
     def setup(self):
@@ -234,14 +259,17 @@ class fullScrHUD:
 
     @FunctionalWrapper
     def writecontent(self, lt, content):
-        if content.shape[0] > self.wh[1] - lt[0]:
-            content = content[: self.wh[1] - lt[0], :, :]
-        if content.shape[1] > self.wh[0] - lt[1]:
-            content = content[:, : self.wh[0] - lt[1], :]
+        w, h = self.wh
+        l, t = lt
+        contentH, contentW, depth = content.shape
+        if contentH > h - t:
+            content = content[: h - t, :, :]
+        if contentW > w - l:
+            content = content[:, : w - l, :]
         self.m2draw[
-            lt[0] : lt[0] + content.shape[0],
-            lt[1] : lt[1] + content.shape[1],
-            : content.shape[2],
+            t : t + contentH,
+            l : l + contentW,
+            :depth,
         ] = content
 
     @FunctionalWrapper
@@ -278,6 +306,12 @@ class fullScrHUD:
 
     @FunctionalWrapper
     def update(self):
+        self.clear()
+
+        for r in self.regions:
+            if r.content is not None:
+                self.writecontent(r.lt, r.content)
+
         # swap
         tmp = self.m2show
         self.m2show = self.m2draw
