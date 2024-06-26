@@ -91,6 +91,7 @@ class BulletinApp:
         self.hkm = None
         self.bulletinoutputpos = bulletinoutputpos
 
+    @EasyWrapper
     def Async(
         foo,
         self: "BulletinApp",
