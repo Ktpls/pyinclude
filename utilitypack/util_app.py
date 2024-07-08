@@ -1,6 +1,5 @@
 from .util_windows import *
 import traceback
-import hashlib
 
 
 @dataclasses.dataclass
@@ -62,14 +61,11 @@ class BulletinApp:
         self.hudFps = Coalesce(hudFps, 10)
         self.bulletinFps = Coalesce(bulletinFps, 10)
 
-        seed = time.strftime("%Y-%m-%d", time.localtime()).encode("utf-8")
-        seed = hashlib.md5(seed).digest()
-        seed = int.from_bytes(seed[:8], "big")
         self.bulletin = BulletinBoard(
             idlebulletincontents[
                 summonCard(
                     [c[1] for c in idlebulletincontents],
-                    np.random.Generator(np.random.PCG64(seed)),
+                    NpGeneratorFromStrSeed(time.strftime("%Y-%m-%d", time.localtime())),
                 )
             ][0]
         )

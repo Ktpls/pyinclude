@@ -5,9 +5,11 @@ numpy
 """
 
 import numpy as np
+import hashlib
 
 np.seterr(all="raise")
 import scipy.interpolate as interpolate
+
 EPS = 1e-10
 LOGEPS = -10
 
@@ -117,10 +119,12 @@ def SafeLog(x):
     y = np.log(x)
     return y
 
+
 def NormalizeIterableOrSingleArgToNdarray(x):
     if type(x) is np.ndarray:
         return x
     return np.array(NormalizeIterableOrSingleArgToIterable(x))
+
 
 @dataclasses.dataclass
 class BayesEstimator:
@@ -149,7 +153,6 @@ class BayesEstimator:
         possibility = SafeExp(self.logPBASum)
         possibility /= np.sum(possibility)
         return possibility
-
 
 
 """
@@ -194,3 +197,10 @@ def Xls2ListList(path=None, sheetname=None, killNones=True):
     if killNones:
         ret = [l for l in ret if any([e is not None for e in l])]
     return ret
+
+
+def NpGeneratorFromStrSeed(s: str):
+    seed = s.encode("utf-8")
+    seed = hashlib.md5(seed).digest()
+    seed = int.from_bytes(seed[:8])
+    return np.random.Generator(np.random.PCG64(seed))
