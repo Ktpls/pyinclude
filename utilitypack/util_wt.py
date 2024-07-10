@@ -612,7 +612,6 @@ class Blkx:
                         token.Unexpected()
                 elif node == Blkx._BlkxParser._FSMNode.colon:
                     if token.type == Blkx._BlkxParser._TokenType.identifier:
-                        # tm:m=[[-0.0871557, 0.0, 0.996195] [0.0, 1.0, 0.0] [-0.996195, 0.0, -0.0871557] [17.399, -4.41365e-05, 5.5511]]
                         if token.value == "t":
                             curField.type = Blkx.FieldType.text
                         elif token.value == "r":
