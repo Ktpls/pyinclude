@@ -679,8 +679,16 @@ class FSMUtil:
             )
 
         def viewSection(self, s: str):
+            lineStart = s.rfind("\n", 0, self.start)
+            if lineStart == -1:
+                lineStart = 0
+            lineEnd = s.find("\n", self.end)
+            if lineEnd == -1:
+                lineEnd = len(s)
             return "{}>>>>{}<<<<{}".format(
-                s[: self.start], s[self.start : self.end], s[self.end :]
+                s[lineStart : self.start],
+                s[self.start : self.end],
+                s[self.end : lineEnd],
             )
 
     @staticmethod
