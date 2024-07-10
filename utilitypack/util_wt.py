@@ -480,6 +480,7 @@ class Blkx:
         integer = 2
         bool = 3
         dict = 4
+        array = 5
 
     @dataclasses.dataclass
     class Field:
@@ -494,24 +495,34 @@ class Blkx:
             identifier = 0
             text = 1
             num = 2
-            bra = 3
-            ket = 4
+            bracebra = 3
+            braceket = 4
             colon = 5
             eq = 6
             blank = 7
             eof = 8
+            eol = 9
+            comma = 10
+            midbra = 11
+            midket = 12
+            linecomment = 13
 
         matchers = [
             FSMUtil.RegexpTokenMatcher(
                 r"^[a-zA-Z_]{1}[a-zA-Z_0-9]*", _TokenType.identifier
             ),
-            FSMUtil.RegexpTokenMatcher(r'^".*"', _TokenType.text),
-            FSMUtil.RegexpTokenMatcher(r"^(-)?\d+(\.\d+)", _TokenType.num),
-            FSMUtil.RegexpTokenMatcher(r"^{", _TokenType.bra),
-            FSMUtil.RegexpTokenMatcher(r"^}", _TokenType.ket),
+            FSMUtil.RegexpTokenMatcher(r'^".*?"', _TokenType.text),
+            FSMUtil.RegexpTokenMatcher(r"^-?\d+(\.\d+)?(e-?\d+)?", _TokenType.num),
+            FSMUtil.RegexpTokenMatcher(r"^{", _TokenType.bracebra),
+            FSMUtil.RegexpTokenMatcher(r"^}", _TokenType.braceket),
+            FSMUtil.RegexpTokenMatcher(r"^\[", _TokenType.midbra),
+            FSMUtil.RegexpTokenMatcher(r"^\]", _TokenType.midket),
             FSMUtil.RegexpTokenMatcher(r"^:", _TokenType.colon),
             FSMUtil.RegexpTokenMatcher(r"^=", _TokenType.eq),
-            FSMUtil.RegexpTokenMatcher(r"^\s+", _TokenType.blank),
+            FSMUtil.RegexpTokenMatcher(r"^,", _TokenType.comma),
+            FSMUtil.RegexpTokenMatcher(r"^\n", _TokenType.eol),
+            FSMUtil.RegexpTokenMatcher(r"^\s", _TokenType.blank),
+            FSMUtil.RegexpTokenMatcher(r"^//.*?(?=\n|$)", _TokenType.linecomment),
             FSMUtil.RegexpTokenMatcher(r"^$", _TokenType.eof),
         ]
 
@@ -521,6 +532,9 @@ class Blkx:
             colon = 2
             eq = 3
             expectingEq = 4
+            readingArrayExpectNum = 5
+            readingArrayExpectCommaOrEol = 6
+            readingMatExpectCommaOrEol = 7
 
         @dataclasses.dataclass
         class _ParseReturn:
@@ -550,11 +564,28 @@ class Blkx:
             node = Blkx._BlkxParser._FSMNode.start
             fields = []
             curField = None
+            arrayBuff = None
             while True:
                 while True:
                     token = FSMUtil.getToken(s, i, Blkx._BlkxParser.matchers)
+                    print(token.viewSection(s))
                     i = token.end
-                    if token.type != Blkx._BlkxParser._TokenType.blank:
+                    # to the next meaningful token
+                    if token.type == Blkx._BlkxParser._TokenType.linecomment:
+                        continue
+                    if token.type not in (
+                        Blkx._BlkxParser._TokenType.blank,
+                        Blkx._BlkxParser._TokenType.eol,
+                    ):
+                        break
+                    if (
+                        node == Blkx._BlkxParser._FSMNode.readingArrayExpectCommaOrEol
+                        and token.type
+                        in (
+                            Blkx._BlkxParser._TokenType.eof,
+                            Blkx._BlkxParser._TokenType.eol,
+                        )
+                    ):
                         break
                 if node == Blkx._BlkxParser._FSMNode.start:
                     if token.type == Blkx._BlkxParser._TokenType.identifier:
@@ -562,7 +593,7 @@ class Blkx:
                         curField = Blkx.Field(token.value)
                         fields.append(curField)
                     elif token.type in (
-                        Blkx._BlkxParser._TokenType.ket,
+                        Blkx._BlkxParser._TokenType.braceket,
                         Blkx._BlkxParser._TokenType.eof,
                     ):
                         # end
@@ -572,7 +603,7 @@ class Blkx:
                     else:
                         token.Unexpected()
                 elif node == Blkx._BlkxParser._FSMNode.identifier:
-                    if token.type == Blkx._BlkxParser._TokenType.bra:
+                    if token.type == Blkx._BlkxParser._TokenType.bracebra:
                         curField.type = Blkx.FieldType.dict
                         child = Blkx._BlkxParser._parseRecursive(s, token.end)
                         i = child.end
@@ -584,6 +615,7 @@ class Blkx:
                         token.Unexpected()
                 elif node == Blkx._BlkxParser._FSMNode.colon:
                     if token.type == Blkx._BlkxParser._TokenType.identifier:
+                        # tm:m=[[-0.0871557, 0.0, 0.996195] [0.0, 1.0, 0.0] [-0.996195, 0.0, -0.0871557] [17.399, -4.41365e-05, 5.5511]]
                         if token.value == "t":
                             curField.type = Blkx.FieldType.text
                         elif token.value == "r":
@@ -592,6 +624,8 @@ class Blkx:
                             curField.type = Blkx.FieldType.integer
                         elif token.value == "b":
                             curField.type = Blkx.FieldType.bool
+                        elif token.value in ("c", "p2", "p3", "p4"):
+                            curField.type = Blkx.FieldType.array
                         else:
                             token.Unexpected()
                         node = Blkx._BlkxParser._FSMNode.expectingEq
@@ -603,37 +637,61 @@ class Blkx:
                     else:
                         token.Unexpected()
                 elif node == Blkx._BlkxParser._FSMNode.eq:
-                    if token.type in (
-                        Blkx._BlkxParser._TokenType.text,
-                        Blkx._BlkxParser._TokenType.num,
-                        Blkx._BlkxParser._TokenType.identifier,
-                    ):
-                        value = None
-                        if token.type == Blkx._BlkxParser._TokenType.text:
-                            # del quotes
-                            assert curField.type == Blkx.FieldType.text
-                            value = token.value[1:-1]
-                        elif token.type == Blkx._BlkxParser._TokenType.num:
-                            assert curField.type in (
-                                Blkx.FieldType.real,
-                                Blkx.FieldType.integer,
-                            )
+                    if token.type == Blkx._BlkxParser._TokenType.text:
+                        # del quotes
+                        assert curField.type == Blkx.FieldType.text
+                        value = token.value[1:-1]
+                        curField.value = value
+                        node = Blkx._BlkxParser._FSMNode.start
+                    elif token.type == Blkx._BlkxParser._TokenType.num:
+                        if curField.type in (
+                            Blkx.FieldType.real,
+                            Blkx.FieldType.integer,
+                        ):
                             if curField.type == Blkx.FieldType.real:
                                 value = float(token.value)
                             elif curField.type == Blkx.FieldType.integer:
                                 value = int(token.value)
-                        elif token.type == Blkx._BlkxParser._TokenType.identifier:
-                            if token.value == "yes":
-                                value = True
-                            elif token.value == "no":
-                                value = False
-                            else:
-                                token.Unexpected()
-                            assert curField.type == Blkx.FieldType.bool
+                            curField.value = value
+                            node = Blkx._BlkxParser._FSMNode.start
+                        elif curField.type == Blkx.FieldType.array:
+                            arrayBuff = []
+                            arrayBuff.append(float(token.value))
+                            node = (
+                                Blkx._BlkxParser._FSMNode.readingArrayExpectCommaOrEol
+                            )
+                    elif token.type == Blkx._BlkxParser._TokenType.identifier:
+                        if token.value == "yes":
+                            value = True
+                        elif token.value == "no":
+                            value = False
+                        else:
+                            token.Unexpected()
+                        assert curField.type == Blkx.FieldType.bool
                         curField.value = value
                         node = Blkx._BlkxParser._FSMNode.start
                     else:
                         token.Unexpected()
+                elif node == Blkx._BlkxParser._FSMNode.readingArrayExpectNum:
+                    if token.type == Blkx._BlkxParser._TokenType.num:
+                        arrayBuff.append(float(token.value))
+                        node = Blkx._BlkxParser._FSMNode.readingArrayExpectCommaOrEol
+                    else:
+                        token.Unexpected()
+                elif node == Blkx._BlkxParser._FSMNode.readingArrayExpectCommaOrEol:
+                    if token.type == Blkx._BlkxParser._TokenType.comma:
+                        node = Blkx._BlkxParser._FSMNode.readingArrayExpectNum
+                    elif token.type in (
+                        Blkx._BlkxParser._TokenType.eol,
+                        Blkx._BlkxParser._TokenType.eof,
+                    ):
+                        curField.value = arrayBuff
+                        arrayBuff = None
+                        node = Blkx._BlkxParser._FSMNode.start
+                    else:
+                        token.Unexpected()
+                else:
+                    token.Unexpected()
 
     @staticmethod
     def fromText(s: str):

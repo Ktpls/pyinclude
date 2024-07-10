@@ -678,6 +678,11 @@ class FSMUtil:
                 f"unexpected token {self.value}:{self.type} at {self.start}-{self.end}"
             )
 
+        def viewSection(self, s: str):
+            return "{}>>>>{}<<<<{}".format(
+                s[: self.start], s[self.start : self.end], s[self.end :]
+            )
+
     @staticmethod
     def getToken(
         s: str, i: int, matchers: list["FSMUtil.TokenMatcher"]
