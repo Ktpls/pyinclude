@@ -652,14 +652,15 @@ class FSMUtil:
 
     @dataclasses.dataclass
     class RegexpTokenMatcher(TokenMatcher):
-        exp: str
+        exp: str | regex.Pattern
         type: "FSMUtil.TokenTypeLike"
 
         def __post_init__(self):
-            self.compiledExp = regex.compile(self.exp, flags=regex.DOTALL)
+            if isinstance(self.exp, str):
+                self.exp = regex.compile(self.exp, flags=regex.DOTALL)
 
         def tryMatch(self, s: str, i: int) -> "None | FSMUtil.Token":
-            match = regex.match(self.compiledExp, s[i:])
+            match = regex.match(self.exp, s[i:])
             if match is not None:
                 return FSMUtil.Token(
                     self.type, match.group(0), i, i + len(match.group(0))
@@ -702,6 +703,23 @@ class FSMUtil:
         raise FSMUtil.ParseError(
             f"unparseable token at {i}: {s[i:i+10] if len(s) > i+10 else s[i:]}"
         )
+
+    @staticmethod
+    def getAllToken(
+        s: str,
+        matchers: list["FSMUtil.TokenMatcher"],
+        endTokenType: "FSMUtil.TokenTypeLike",
+        start=0,
+    ) -> list["FSMUtil.Token"]:
+        i = start
+        tokenList: list[FSMUtil.Token] = []
+        while True:
+            token = FSMUtil.getToken(s, i, matchers)
+            tokenList.append(token)
+            i = token.end
+            if token.type == endTokenType:
+                break
+        return tokenList
 
 
 class expparser:
