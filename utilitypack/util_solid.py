@@ -700,9 +700,8 @@ class FSMUtil:
             token = m.tryMatch(s, i)
             if token is not None:
                 return token
-        raise FSMUtil.ParseError(
-            f"unparseable token at {i}: {s[i:i+10] if len(s) > i+10 else s[i:]}"
-        )
+        sectionEnd = min(i + 10, len(s))
+        raise FSMUtil.ParseError(f"unparseable token at {i}: {s[i:sectionEnd]}")
 
     @staticmethod
     def getAllToken(
@@ -720,6 +719,44 @@ class FSMUtil:
             if token.type == endTokenType:
                 break
         return tokenList
+
+    class PeekableLazyTokenizer:
+        s: str
+        matchers: list["FSMUtil.TokenMatcher"]
+        _tokenList: list["FSMUtil.Token"] = list()
+        _indexTextTokenizing = 0
+        _indexTokenListCurr = -1
+
+        def __init__(
+            self,
+            s: str,
+            matchers: list["FSMUtil.TokenMatcher"],
+            start=0,
+        ):
+            self.s = s
+            self.matchers = matchers
+            self._indexTextTokenizing = start
+
+        def _tokenizeNext(self):
+            token = FSMUtil.getToken(self.s, self._indexTextTokenizing, self.matchers)
+            self._indexTextTokenizing = token.end
+            self._tokenList.append(token)
+
+        def getByTokenIndex(self, index):
+            while True:
+                if index < len(self._tokenList):
+                    return self._tokenList[index]
+                self._tokenizeNext()
+
+        def curr(self):
+            return self.peek(0)
+
+        def peek(self, distance=1):
+            return self.getByTokenIndex(self._indexTokenListCurr + distance)
+
+        def next(self):
+            self._indexTokenListCurr += 1
+            return self.curr()
 
 
 class expparser:
@@ -2095,7 +2132,7 @@ class AnnotationUtil:
     @staticmethod
     @EasyWrapper
     def Annotation(obj, **kwargs):
-        return AnnotationUtil.AnnotationWithAnyKeyType(obj, kwargs)
+        return AnnotationUtil.AnnotationWithAnyKeyType(kwargs)(obj)
 
     @staticmethod
     @EasyWrapper
@@ -2112,8 +2149,8 @@ class AnnotationUtil:
         return obj.__ExtraAnnotations__
 
     @staticmethod
-    def getAnnotation(obj):
-        return DictAsAnObject(AnnotationUtil.getAnnotationDict(obj))
+    def getAnnotation(obj, key):
+        return AnnotationUtil.getAnnotationDict(obj).get(key, None)
 
     @staticmethod
     @EasyWrapper

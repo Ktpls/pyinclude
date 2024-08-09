@@ -259,6 +259,7 @@ class fullScrHUD:
 
     @FunctionalWrapper
     def writecontent(self, lt, content):
+        # TODO: considering mixing instead of writting
         w, h = self.wh
         l, t = lt
         contentH, contentW, depth = content.shape

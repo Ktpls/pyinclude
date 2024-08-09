@@ -416,3 +416,14 @@ class ModelDemo:
             self.model.eval()
             for i in range(self.iterNum):
                 self.iterWork(i)
+
+class GlobalAvgPooling(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    @staticmethod
+    def static_forward(x):
+        return torch.mean(x, dim=(2, 3))
+
+    def forward(self, x):
+        return GlobalAvgPooling.static_forward(x)
