@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures as futures
 from datetime import datetime
 import copy
 import ctypes
@@ -18,6 +18,8 @@ import threading
 import time
 import traceback
 import typing
+import uuid
+import json
 
 """
 solid
@@ -49,8 +51,26 @@ def FloatEq(a, b, eps=1e-6):
     return abs(a - b) < eps
 
 
-def Deduplicate(l: list):
-    return list(set(l))
+IdentityMapping = lambda x: x
+
+
+def BetterGroupBy(l: list, pred):
+    # return {n: list(ll) for n, ll in itertools.groupby(sorted(l, key=pred), pred)}
+    r = dict()
+    for item in l:
+        key = pred(item)
+        if key in r:
+            r[key].append(item)
+        else:
+            r[key] = [item]
+    return r
+
+
+def Deduplicate(l: list, key=None):
+    key = Coalesce(key, IdentityMapping)
+    m = BetterGroupBy(l, key)
+    l = [v[0] for v in m.values()]
+    return l
 
 
 def ArrayFlatten(iterable, iterableType: tuple[type] = (list, tuple)):
@@ -330,12 +350,14 @@ class StoppableThread(StoppableSomewhat):
         self,
         strategy_runonrunning: "StoppableSomewhat.StrategyRunOnRunning" = None,
         strategy_error: "StoppableSomewhat.StrategyError" = None,
-        pool: ThreadPoolExecutor = None,
+        pool: futures.ThreadPoolExecutor = None,
     ) -> None:
         super().__init__(strategy_runonrunning, strategy_error)
         self.running: bool = False
         self.stopsignal: bool = True
-        self.pool: ThreadPoolExecutor = Coalesce(pool, ThreadPoolExecutor())
+        self.pool: futures.ThreadPoolExecutor = Coalesce(
+            pool, futures.ThreadPoolExecutor()
+        )
         self.submit = None
         self.result = None
 
@@ -1735,7 +1757,7 @@ class TimeNonconcernedStage(Stage):
 
 
 class SyncExecutableManager:
-    def __init__(self, pool: ThreadPoolExecutor) -> None:
+    def __init__(self, pool: futures.ThreadPoolExecutor) -> None:
         self.pool = pool
         self.selist: list[SyncExecutable] = []
 
@@ -1924,10 +1946,6 @@ class AccessibleQueue:
 
     def ToList(self):
         return [self[i] for i in range(len(self))]
-
-
-IdentityMapping = lambda x: x
-
 
 class BeanUtil:
     @dataclasses.dataclass
@@ -2215,10 +2233,90 @@ def printAndRet(val):
     return val
 
 
-def AllPartsOfFilePath(path: str):
-    dir = os.path.dirname(path)
-    filename, ext = os.path.splitext(os.path.basename(path))
-    return dir, filename, ext
+@dataclasses.dataclass
+class UrlFullResolution:
+    url: str
+    protocol: str
+    host: str
+    path: str
+    param: str
+    secondaryHost: str
+    baseHost: str
+    domain: str
+    port: str
+    folder: str
+    fileName: str
+    extName: str
+
+    class RegPool:
+        globally = regex.compile(
+            r"^(?<protcol>[A-Za-z]+://)?(?<host>[^/]+\.[^/.]+)?(?<path>[^?]*)?(?<param>\?.*)?$"
+        )
+        host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
+        path = regex.compile(
+            r"^(?<folder>.+?)(?:/(?<fileName>[^/]+(?<extName>\..*)))?$"
+        )
+
+    class UnexpectedException(Exception): ...
+
+    @staticmethod
+    def of(url: str):
+        url = url.strip().replace("\\", "/")
+        (
+            protocol,
+            host,
+            path,
+            param,
+            secondaryHost,
+            baseHost,
+            domain,
+            port,
+            folder,
+            fileName,
+            extName,
+        ) = [None] * 11
+        matchGlobally = UrlFullResolution.RegPool.globally.match(url)
+        if matchGlobally is not None:
+            protocol, host, path, param = matchGlobally.group(
+                "protcol", "host", "path", "param"
+            )
+            if host is not None:
+                matchHost = UrlFullResolution.RegPool.host.match(host)
+                if matchHost is not None:
+                    hostNoPort, port = matchHost.group("host", "port")
+                    lHost = hostNoPort.split(".")
+                    if len(lHost) < 2:
+                        raise UrlFullResolution.UnexpectedException()
+                    if not (
+                        len(lHost) == 4
+                        and all(str.isdigit(i) and 255 >= int(i) >= 0 for i in lHost)
+                    ):
+                        secondaryHost = ".".join(lHost[0:-2])
+                        baseHost = ".".join(lHost[-2:])
+                        domain = lHost[-1]
+            if path is not None:
+                matchPath = UrlFullResolution.RegPool.path.match(
+                    path,
+                )
+                if matchPath is not None:
+                    folder, fileName, extName = matchPath.group(
+                        "folder", "fileName", "extName"
+                    )
+
+        return UrlFullResolution(
+            url=url,
+            protocol=protocol,
+            host=host,
+            path=path,
+            param=param,
+            secondaryHost=secondaryHost,
+            baseHost=baseHost,
+            domain=domain,
+            port=port,
+            folder=folder,
+            fileName=fileName,
+            extName=extName,
+        )
 
 
 def Decode(*args):
@@ -2249,13 +2347,61 @@ def Coalesce(*args):
     return None
 
 
-def BetterGroupBy(l: list, pred):
-    # return {n: list(ll) for n, ll in itertools.groupby(sorted(l, key=pred), pred)}
-    r = dict()
-    for item in l:
-        key = pred(item)
-        if key in r:
-            r[key].append(item)
-        else:
-            r[key] = [item]
-    return r
+def mlambda(s: str, _globals=None, _locals=None):
+    exp = regex.compile(
+        r"^\s*def\s*(?<paraAndType>.*?):\s*\n(?<body>.+)$", flags=regex.DOTALL
+    )
+    match = exp.match(s)
+    if not match:
+        raise SyntaxError("function signing syntax error")
+    match = match.groupdict()
+    paraAndType = match["paraAndType"]
+    body = match["body"]
+
+    emptyLine = regex.compile("^\s*(#.*)?$", flags=regex.MULTILINE)
+
+    def fixBodyIndent(body: str):
+        lines = body.splitlines()
+        originalBaseIndent = None
+        for l in lines:
+            if emptyLine.match(l):
+                continue
+            originalBaseIndent = len(l) - len(l.lstrip())
+        assert originalBaseIndent is not None, "bad indent"
+        newBodyIndent = 2
+        for i in range(len(lines)):
+            l = lines[i]
+            if emptyLine.match(l):
+                continue
+            for realIndentToTrim in range(0, originalBaseIndent):
+                if l[realIndentToTrim] not in (" ", "\t"):
+                    break
+            lines[i] = " " * newBodyIndent + l[realIndentToTrim:]
+        return "\n".join(lines)
+
+    # body = fixBodyIndent(body)
+
+    func = None
+    lambdaName = "_lambda_" + str(uuid.uuid1()).replace("-", "_")
+
+    def _setBackFun(f):
+        nonlocal func
+        func = f
+
+    code = f"""
+def {lambdaName}{paraAndType}:
+{body}
+_setBackFun({lambdaName})
+    """
+
+    exec(code, _globals, {**(_locals or {}), "_setBackFun": _setBackFun})
+    return func
+
+
+def ReprObject(o):
+    return json.dumps(
+        o,
+        indent=4,
+        ensure_ascii=False,
+        default=lambda x: x.__dict__,
+    )

@@ -55,7 +55,7 @@ class BulletinApp:
 
         fps = Coalesce(fps, 10)
 
-        threadpool = Coalesce(threadpool, ThreadPoolExecutor(max_workers=10))
+        threadpool = Coalesce(threadpool, futures.ThreadPoolExecutor(max_workers=10))
         self.hudFps = Coalesce(hudFps, 10)
         self.bulletinFps = Coalesce(bulletinFps, 10)
 
@@ -69,7 +69,7 @@ class BulletinApp:
         )
         self.fpsm = FpsManager(fps)
 
-        self.threadpool:ThreadPoolExecutor = threadpool
+        self.threadpool:futures.ThreadPoolExecutor = threadpool
 
         self.hud: fullScrHUD = fullScrHUD()
 
