@@ -3,7 +3,6 @@ from .util_np import *
 from .util_ocv import *
 from ctypes import windll, byref, c_ubyte
 from ctypes.wintypes import RECT, HWND
-import zipfile
 import win32api
 import win32con
 import win32gui
@@ -798,17 +797,6 @@ class Rhythms:
     GoodNotify = Rhythm.fromString("1000", default_dur=100)
     BadNotify = Rhythm.fromString("500 500 500", default_dur=100)
     Reboot = Rhythm.fromString("500 750 400", default_dur=100)
-
-
-def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
-    zipf = zipfile.ZipFile(zipf)
-    singleFile = not isinstance(filename, (tuple, list))
-    if singleFile:
-        filename = [filename]
-    file = [zipf.read(f) for f in filename]
-    if singleFile:
-        return file[0]
-    return file
 
 
 class WifiRefresher:

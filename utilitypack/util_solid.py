@@ -20,6 +20,7 @@ import traceback
 import typing
 import uuid
 import json
+import zipfile
 
 """
 solid
@@ -1947,6 +1948,7 @@ class AccessibleQueue:
     def ToList(self):
         return [self[i] for i in range(len(self))]
 
+
 class BeanUtil:
     @dataclasses.dataclass
     class Option:
@@ -2233,20 +2235,25 @@ def printAndRet(val):
     return val
 
 
+def PathNormalize(path: str):
+    return path.replace("\\", "/")
+
+
 @dataclasses.dataclass
 class UrlFullResolution:
-    url: str
-    protocol: str
-    host: str
-    path: str
-    param: str
-    secondaryHost: str
-    baseHost: str
-    domain: str
-    port: str
-    folder: str
-    fileName: str
-    extName: str
+
+    url: str | None
+    protocol: str | None
+    host: str | None
+    path: str | None
+    param: str | None
+    secondaryHost: str | None
+    baseHost: str | None
+    domain: str | None
+    port: str | None
+    folder: str | None
+    fileName: str | None
+    extName: str | None
 
     class RegPool:
         globally = regex.compile(
@@ -2261,7 +2268,7 @@ class UrlFullResolution:
 
     @staticmethod
     def of(url: str):
-        url = url.strip().replace("\\", "/")
+        url = PathNormalize(url)
         (
             protocol,
             host,
@@ -2405,3 +2412,14 @@ def ReprObject(o):
         ensure_ascii=False,
         default=lambda x: x.__dict__,
     )
+
+
+def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
+    zipf = zipfile.ZipFile(zipf)
+    singleFile = not isinstance(filename, (tuple, list))
+    if singleFile:
+        filename = [filename]
+    file = [zipf.read(f) for f in filename]
+    if singleFile:
+        return file[0]
+    return file
