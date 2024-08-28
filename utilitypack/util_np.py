@@ -62,29 +62,28 @@ class ZFunc:
     """
 
     def __init__(self, x1, y1, x2, y2) -> None:
+        assert np.fabs(x1 - x2) > EPS
         if x1 < x2:
-            # [lower on x or higher on x, x or y]
-            self.pt = np.array([[x1, y1], [x2, y2]])
+            ptleft = np.array([x1, y1])
+            ptright = np.array([x2, y2])
         else:
-            self.pt = np.array([[x2, y2], [x1, y1]])
-        self.slope = (self.pt[1, 1] - self.pt[0, 1]) / (
-            self.pt[1, 0] - self.pt[0, 0] + 0.0001
-        )
-        self.bias = self.pt[0, 1] - self.pt[0, 0] * self.slope
+            ptright = np.array([x1, y1])
+            ptleft = np.array([x2, y2])
+        self.yminmax = np.array([min(y1, y2), max(y1, y2)])
+        self.slope = (ptright[1] - ptleft[1]) / (ptright[0] - ptleft[0])
+        self.bias = ptleft[1] - self.slope * ptleft[0]
 
     def __CallOnNDArray(self, x: np.ndarray):
         y = self.slope * x + self.bias
-        y[x < self.pt[0, 0]] = self.pt[0, 1]
-        y[x > self.pt[1, 0]] = self.pt[1, 1]
+        y = np.clip(y, self.yminmax[0], self.yminmax[1])
         return y
 
     def __CallOnNum(self, x):
-        if x < self.pt[0, 0]:
-            y = self.pt[0, 1]
-        elif x > self.pt[1, 0]:
-            y = self.pt[1, 1]
-        else:
-            y = self.slope * x + self.bias
+        y = self.slope * x + self.bias
+        if y < self.yminmax[0]:
+            y = self.yminmax[0]
+        elif y > self.yminmax[1]:
+            y = self.yminmax[1]
         return y
 
     def __call__(self, x):

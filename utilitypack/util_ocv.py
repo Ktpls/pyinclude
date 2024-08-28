@@ -420,26 +420,29 @@ class MotionEstimator:
 
 
 class AffineMats:
+    dtype = np.float32
     zoom = lambda rate: np.array(
         [[rate, 0, 0], [0, rate, 0], [0, 0, 1]],
-        dtype=np.float32,
+        dtype=AffineMats.dtype,
     )
     shift = lambda x, y: np.array(
         [[1, 0, x], [0, 1, y], [0, 0, 1]],
-        dtype=np.float32,
+        dtype=AffineMats.dtype,
     )
     flip = lambda lr, ud: np.array(
         [[lr, 0, 0], [0, ud, 0], [0, 0, 1]],
-        dtype=np.float32,
+        dtype=AffineMats.dtype,
     )
     rot = lambda the: np.array(
         [[np.cos(the), np.sin(the), 0], [-np.sin(the), np.cos(the), 0], [0, 0, 1]],
-        dtype=np.float32,
+        dtype=AffineMats.dtype,
     )
     identity = lambda: np.array(
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-        dtype=np.float32,
+        dtype=AffineMats.dtype,
     )
+    fromVec2d = lambda v: np.concatenate([v, [1.0]])
+    toVec2d = lambda v: v[:2]
 
 
 class MtiFilter:
@@ -487,7 +490,7 @@ class MtiFilter:
             desiredImgShape = np.flip(img.shape[:2])
         else:
             cutRoiShift = AffineMats.shift(-roi[0], -roi[1])
-            desiredImgShape = (np.array(roi[2:]) - np.array(roi[:2]))
+            desiredImgShape = np.array(roi[2:]) - np.array(roi[:2])
 
         if self.mtiQueue.isEmpty():
             ret = None

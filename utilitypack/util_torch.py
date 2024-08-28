@@ -89,8 +89,8 @@ def savemodel(model: torch.nn.Module, path):
     print(f"Saved PyTorch Model State to {path}")
 
 
-def tensorimg2ndarray(m):
-    m = np.array(m)
+def tensorimg2ndarray(m:torch.Tensor):
+    m = m.cpu().numpy()
     if not len(m.shape) == 2:  # not single channeled
         m = np.moveaxis(m, -3, -1)
     return m
@@ -311,6 +311,7 @@ class trainpipe:
         trainmainprogress,
         epochnum=10,
         outputperbatchnum=100,
+        device="cpu",
         customSubOnOutput=None,
     ):
         epochs = epochnum

@@ -908,6 +908,8 @@ class expparser:
                 return expparser._NumLikeUnionUtil.NumLikeType.LIST
             elif isinstance(nl, float):
                 return expparser._NumLikeUnionUtil.NumLikeType.NUM
+            elif isinstance(nl, int):
+                return expparser._NumLikeUnionUtil.NumLikeType.NUM
             elif isinstance(nl, bool):
                 return expparser._NumLikeUnionUtil.NumLikeType.BOOL
             elif nl is None:
@@ -920,7 +922,7 @@ class expparser:
         def ToNum(nl):
             t = expparser._NumLikeUnionUtil.TypeOf(nl)
             if t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
-                return nl
+                return float(nl)
             elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
                 return 1.0 if nl else 0.0
             else:
@@ -1979,6 +1981,10 @@ class BeanUtil:
             inst = object.__new__(cls)
             fields = BeanUtil.__GetFields(cls)
             for name, taipe in fields.items():
+                """
+                for taipe as class, its possible to recursively call __GetEmptyInstance
+                but taipe could be str, or typing.GenericAlias
+                """
                 setattr(inst, name, None)
             return inst
         else:
@@ -2410,7 +2416,10 @@ def ReprObject(o):
         o,
         indent=4,
         ensure_ascii=False,
-        default=lambda x: x.__dict__,
+        default=lambda x: {
+            k: v for k, v in x.__dict__.items() if not str.startswith(k, "_")
+        },
+        sort_keys=True,
     )
 
 
