@@ -332,8 +332,8 @@ class trainpipe:
                     print(
                         f"Training speed: {outputperbatchnum/(end_time-start_time):>5f} batches per second"
                     )
-                    aveloss = loss.item() / batchsizeof(datatuple[0])
-                    print(f"Average loss: {aveloss:>7f}")
+                    aveloss = loss.item()
+                    print(f"Instant loss: {aveloss:>7f}")
                     if customSubOnOutput is not None:
                         customSubOnOutput(batch, aveloss)
                     start_time = time.time()
