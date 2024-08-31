@@ -89,7 +89,7 @@ def savemodel(model: torch.nn.Module, path):
     print(f"Saved PyTorch Model State to {path}")
 
 
-def tensorimg2ndarray(m:torch.Tensor):
+def tensorimg2ndarray(m: torch.Tensor):
     m = m.cpu().numpy()
     if not len(m.shape) == 2:  # not single channeled
         m = np.moveaxis(m, -3, -1)
@@ -342,7 +342,7 @@ class trainpipe:
         print("Done!")
 
 
-class ConvBnHs(torch.nn.Module):
+class ConvNormInsp(torch.nn.Module):
     def __init__(
         self,
         in_channels,
@@ -350,22 +350,46 @@ class ConvBnHs(torch.nn.Module):
         kernel_size=3,
         stride=1,
         padding="same",
-        ifBn=True,
+        norm=None,
+        insp=None,
     ):
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
-        self.bn = torch.nn.BatchNorm2d(out_channels) if ifBn else None
-        self.ifBn = ifBn
-        self.hs = torch.nn.Hardswish()
+        self.norm = norm
+        self.insp = insp
 
     def forward(self, x):
         x = self.conv(x)
-        if self.bn is not None:
-            x = self.bn(x)
-        x = self.hs(x)
+        if self.norm is not None:
+            x = self.norm(x)
+        x = self.insp(x)
         return x
+
+
+class ConvGnHs(ConvNormInsp):
+    def __init__(self, in_channels, out_channels, numGroup=4, *a, **kw):
+        super().__init__(
+            in_channels,
+            out_channels,
+            norm=torch.nn.GroupNorm(numGroup, out_channels),
+            insp=torch.nn.Hardswish(),
+            *a,
+            **kw,
+        )
+
+
+class ConvBnHs(ConvNormInsp):
+    def __init__(self, in_channels, out_channels, *a, **kw):
+        super().__init__(
+            in_channels,
+            out_channels,
+            norm=torch.nn.BatchNorm2d(out_channels),
+            insp=torch.nn.Hardswish(),
+            *a,
+            **kw,
+        )
 
 
 class OneShotAggregationResThrough(torch.nn.Module):
@@ -418,6 +442,7 @@ class ModelDemo:
             for i in range(self.iterNum):
                 self.iterWork(i)
 
+
 class GlobalAvgPooling(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -428,7 +453,6 @@ class GlobalAvgPooling(torch.nn.Module):
 
     def forward(self, x):
         return GlobalAvgPooling.static_forward(x)
-
 
 
 def setModuleFree(backbone: torch.nn.Module, freeLayers):
