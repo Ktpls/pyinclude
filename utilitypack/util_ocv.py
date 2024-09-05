@@ -276,7 +276,7 @@ def getDemonstrationImg():
     x = np.linspace(0, 5 * 2 * np.pi, 100, dtype=np.float32).reshape(1, -1)
     y = x.T
     demo = np.sin(x + y)
-    demo = ZFunc(0, 0.25, 0, 0.75)(demo) * 255
+    demo = np.where(demo < 0, 0.25, 0.75) * 255
     return demo
 
 
