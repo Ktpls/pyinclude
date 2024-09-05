@@ -131,7 +131,7 @@ class BayesEstimator:
     distributionModel: typing.Callable  # to calc P(measuredVal=B|val=A)
     logPBASum: np.ndarray = dataclasses.field(init=False, default=None)
 
-    logSumLowerLimit = -500
+    logSumLowerLimit = -100
 
     def __post_init__(self):
         self.logPBASum = np.zeros_like(self.xspace)
@@ -139,10 +139,10 @@ class BayesEstimator:
     def update(self, measuredValue: float | list[float] | np.ndarray):
         measuredValue = NormalizeIterableOrSingleArgToNdarray(measuredValue)
         measuredValue = np.array(measuredValue)
-        PBA = self.distributionModel(
+        P_B_under_A = self.distributionModel(
             self.xspace.reshape((-1, 1)), measuredValue.reshape((1, -1))
         )
-        self.logPBASum += np.sum(SafeLog(PBA), axis=1)
+        self.logPBASum += np.sum(SafeLog(P_B_under_A), axis=1)
         self.logPBASum -= np.max(self.logPBASum)
         self.logPBASum[self.logPBASum < BayesEstimator.logSumLowerLimit] = (
             BayesEstimator.logSumLowerLimit

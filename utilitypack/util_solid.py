@@ -1625,6 +1625,19 @@ class perf_statistic:
     def _timeCurrentlyCounting(self):
         return time.perf_counter() - self._starttime if self.isRunning() else 0
 
+    @dataclasses.dataclass
+    class SectionCounter:
+        ps: "perf_statistic"
+        clearOnExit: bool = False
+
+        def __enter__(self):
+            self.ps.start()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.ps.stop()
+            if self.clearOnExit:
+                self.ps.clear()
+
 
 class FpsManager:
     def __init__(self, fps=60):
@@ -1743,6 +1756,9 @@ class OneOrderLinearFilter:
         output_sample = self.a * self.previous_output + self.b * input_sample
         self.previous_output = output_sample
         return output_sample
+
+    def get(self):
+        return self.previous_output
 
 
 class Stage:
@@ -1974,7 +1990,7 @@ class BeanUtil:
         return result
 
     @staticmethod
-    def __GetEmptyInstance(cls):
+    def GetEmptyInstance(cls):
         args = inspect.getargs(cls.__init__.__code__)
         if len(args) > 1:
             # found init with arg more than self
@@ -1982,7 +1998,7 @@ class BeanUtil:
             fields = BeanUtil.__GetFields(cls)
             for name, taipe in fields.items():
                 """
-                for taipe as class, its possible to recursively call __GetEmptyInstance
+                for taipe as class, its possible to recursively call GetEmptyInstance
                 but taipe could be str, or typing.GenericAlias
                 """
                 setattr(inst, name, None)
@@ -2041,7 +2057,7 @@ class BeanUtil:
     def __DictOrObj2ClassCopy(
         src: object, dst: typing.Callable, option: "BeanUtil.Option"
     ):
-        dstobj = BeanUtil.__GetEmptyInstance(dst)
+        dstobj = BeanUtil.GetEmptyInstance(dst)
         BeanUtil.__DictOrObj2DictOrObjCopy(src, dstobj, option)
         return dstobj
 
@@ -2412,13 +2428,17 @@ _setBackFun({lambdaName})
 
 
 def ReprObject(o):
+    def serialize(o):
+        if hasattr(o, "__repr__"):
+            return o.__repr__()
+        else:
+            return {k: v for k, v in o.__dict__.items() if not str.startswith(k, "_")}
+
     return json.dumps(
         o,
         indent=4,
         ensure_ascii=False,
-        default=lambda x: {
-            k: v for k, v in x.__dict__.items() if not str.startswith(k, "_")
-        },
+        default=serialize,
         sort_keys=True,
     )
 
@@ -2432,3 +2452,32 @@ def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
     if singleFile:
         return file[0]
     return file
+
+
+def extend_to_enum(enum: enum.Enum, extend_dict: dict):
+    """
+    扩展枚举类项目
+    :params enum: Enum 枚举类型
+    :params extend_dict: dict 追加的项目和值的字典
+    :return: None
+    """
+    # 先做 key, value的唯一性校验
+    if (
+        extend_dict.keys() & enum._member_map_.keys()
+        or extend_dict.values() & enum._value2member_map_.keys()
+    ):
+        raise ValueError("extend_dict:{} is invalid".format(extend_dict))
+
+    # 追加枚举项目
+    for key, val in extend_dict.items():
+        # 实例化枚举对象，enum.__new__ 是被重写过的，
+        # 所以直接使用 object.__new__ 加赋值的方式实现
+        v = object.__new__(enum)
+        v.__objclass__ = enum
+        v._name_ = key
+        v._value_ = val
+
+        # 将枚举对象加入枚举类型的映射表里
+        enum._member_map_[key] = v  # 名字对应对象的字典
+        enum._member_names_.append(key)  # 名字列表
+        enum._value2member_map_[val] = v  # 值对应对象的字典

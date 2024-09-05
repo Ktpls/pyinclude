@@ -317,7 +317,7 @@ class trainpipe:
         epochs = epochnum
         start_time = time.time()
         for ep in range(epochs):
-            print(f"Epoch {ep+1}")
+            print(f"Epoch {ep}")
             print("-------------------------------")
 
             # train
