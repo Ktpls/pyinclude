@@ -688,8 +688,9 @@ class perf_statistic:
 
     def clear(self):
         self._starttime = None
-        self._stagedtime = 0
+        self._stagedTime = 0
         self._cycle = 0
+        self._stagedTimeList = list()
         return self
 
     def start(self):
@@ -703,7 +704,9 @@ class perf_statistic:
     def stop(self):
         if not self.isRunning():
             return self
-        self._stagedtime += self._timeCurrentlyCounting()
+        timeThisRound = self._timeCurrentlyCounting()
+        self._stagedTime += timeThisRound
+        self._stagedTimeList.append(timeThisRound)
         self._starttime = None
         return self
 
@@ -711,7 +714,7 @@ class perf_statistic:
         return self._starttime is not None
 
     def time(self):
-        return self._stagedtime + self._timeCurrentlyCounting()
+        return self._stagedTime + self._timeCurrentlyCounting()
 
     def aveTime(self):
         return self.time() / (self._cycle if self._cycle > 0 else 1)
@@ -1353,93 +1356,6 @@ def printAndRet(val):
 
 def PathNormalize(path: str):
     return path.replace("\\", "/")
-
-
-@dataclasses.dataclass
-class UrlFullResolution:
-
-    url: str | None
-    protocol: str | None
-    host: str | None
-    path: str | None
-    param: str | None
-    secondaryHost: str | None
-    baseHost: str | None
-    domain: str | None
-    port: str | None
-    folder: str | None
-    fileName: str | None
-    extName: str | None
-
-    class RegPool:
-        globally = regex.compile(
-            r"^(?<protcol>[A-Za-z]+://)?(?<host>[^/]+\.[^/.]+)?(?<path>[^?]*)?(?<param>\?.*)?$"
-        )
-        host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
-        path = regex.compile(
-            r"^(?<folder>.+?)(?:/(?<fileName>[^/]+(?<extName>\..*)))?$"
-        )
-
-    class UnexpectedException(Exception): ...
-
-    @staticmethod
-    def of(url: str):
-        url = PathNormalize(url)
-        (
-            protocol,
-            host,
-            path,
-            param,
-            secondaryHost,
-            baseHost,
-            domain,
-            port,
-            folder,
-            fileName,
-            extName,
-        ) = [None] * 11
-        matchGlobally = UrlFullResolution.RegPool.globally.match(url)
-        if matchGlobally is not None:
-            protocol, host, path, param = matchGlobally.group(
-                "protcol", "host", "path", "param"
-            )
-            if host is not None:
-                matchHost = UrlFullResolution.RegPool.host.match(host)
-                if matchHost is not None:
-                    hostNoPort, port = matchHost.group("host", "port")
-                    lHost = hostNoPort.split(".")
-                    if len(lHost) < 2:
-                        raise UrlFullResolution.UnexpectedException()
-                    if not (
-                        len(lHost) == 4
-                        and all(str.isdigit(i) and 255 >= int(i) >= 0 for i in lHost)
-                    ):
-                        secondaryHost = ".".join(lHost[0:-2])
-                        baseHost = ".".join(lHost[-2:])
-                        domain = lHost[-1]
-            if path is not None:
-                matchPath = UrlFullResolution.RegPool.path.match(
-                    path,
-                )
-                if matchPath is not None:
-                    folder, fileName, extName = matchPath.group(
-                        "folder", "fileName", "extName"
-                    )
-
-        return UrlFullResolution(
-            url=url,
-            protocol=protocol,
-            host=host,
-            path=path,
-            param=param,
-            secondaryHost=secondaryHost,
-            baseHost=baseHost,
-            domain=domain,
-            port=port,
-            folder=folder,
-            fileName=fileName,
-            extName=extName,
-        )
 
 
 def Decode(*args):
@@ -2498,6 +2414,94 @@ try:
             "false": False,
             "none": None,
         }
+
+    @dataclasses.dataclass
+    class UrlFullResolution:
+
+        url: str | None
+        protocol: str | None
+        host: str | None
+        path: str | None
+        param: str | None
+        secondaryHost: str | None
+        baseHost: str | None
+        domain: str | None
+        port: str | None
+        folder: str | None
+        fileName: str | None
+        extName: str | None
+
+        class RegPool:
+            globally = regex.compile(
+                r"^(?<protcol>[A-Za-z]+://)?(?<host>[^/]+\.[^/.]+)?(?<path>[^?]*)?(?<param>\?.*)?$"
+            )
+            host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
+            path = regex.compile(
+                r"^(?<folder>.+?)(?:/(?<fileName>[^/]+(?<extName>\..*)))?$"
+            )
+
+        class UnexpectedException(Exception): ...
+
+        @staticmethod
+        def of(url: str):
+            url = PathNormalize(url)
+            (
+                protocol,
+                host,
+                path,
+                param,
+                secondaryHost,
+                baseHost,
+                domain,
+                port,
+                folder,
+                fileName,
+                extName,
+            ) = [None] * 11
+            matchGlobally = UrlFullResolution.RegPool.globally.match(url)
+            if matchGlobally is not None:
+                protocol, host, path, param = matchGlobally.group(
+                    "protcol", "host", "path", "param"
+                )
+                if host is not None:
+                    matchHost = UrlFullResolution.RegPool.host.match(host)
+                    if matchHost is not None:
+                        hostNoPort, port = matchHost.group("host", "port")
+                        lHost = hostNoPort.split(".")
+                        if len(lHost) < 2:
+                            raise UrlFullResolution.UnexpectedException()
+                        if not (
+                            len(lHost) == 4
+                            and all(
+                                str.isdigit(i) and 255 >= int(i) >= 0 for i in lHost
+                            )
+                        ):
+                            secondaryHost = ".".join(lHost[0:-2])
+                            baseHost = ".".join(lHost[-2:])
+                            domain = lHost[-1]
+                if path is not None:
+                    matchPath = UrlFullResolution.RegPool.path.match(
+                        path,
+                    )
+                    if matchPath is not None:
+                        folder, fileName, extName = matchPath.group(
+                            "folder", "fileName", "extName"
+                        )
+
+            return UrlFullResolution(
+                url=url,
+                protocol=protocol,
+                host=host,
+                path=path,
+                param=param,
+                secondaryHost=secondaryHost,
+                baseHost=baseHost,
+                domain=domain,
+                port=port,
+                folder=folder,
+                fileName=fileName,
+                extName=extName,
+            )
 
 except ImportError:
     pass
