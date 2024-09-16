@@ -413,36 +413,19 @@ class HotkeyManager:
         not severe problem
     """
 
+    @dataclasses.dataclass
     class hotkeytask:
-        key: list[list[int]]
-        onKeyDown: typing.Callable = None
-        onKeyUp: typing.Callable = None
+        key: list[int]
+        onKeyDown: typing.Callable[[], None] = None
+        onKeyUp: typing.Callable[[], None] = None
 
-        def __init__(
-            self,
-            key: int | typing.Iterable[int] | typing.Iterable[typing.Iterable[int]],
-            foo: typing.Callable[[], None],
-            continiousPress: bool = None,
-        ) -> None:
-            self.key = HotkeyManager.hotkeytask.formalize_key_param(key)
+        def __post_init__(self) -> None:
+            self.key = HotkeyManager.hotkeytask.formalize_key_param(self.key)
             # self.key is like [keyset1=[key1, key2], keyset2=[key3, key4]]
-            self.foo = foo
-            self.continiousPress = continiousPress if continiousPress else False
-            self.stage = 0
-            self.keyChangeOnStageChange = [
-                (
-                    ListEq(self.key[i], self.key[i - 1])
-                    if i != 0
-                    else ListEq(self.key[0], self.key[-1])
-                )
-                for i, k in enumerate(self.key)
-            ]
 
         @staticmethod
         def formalize_key_param(key):
             if not isinstance(key, typing.Iterable):
-                key = [[key]]
-            elif not isinstance(key[0], typing.Iterable):
                 key = [key]
             else:
                 key = key
@@ -451,36 +434,7 @@ class HotkeyManager:
         @staticmethod
         def getKeyRepr(key):
             key = HotkeyManager.hotkeytask.formalize_key_param(key)
-            if len(key) == 1:
-                # only one stage
-                return " + ".join([TranslateHotKey()(k) for k in key[0]])
-            else:
-                return "\n".join(
-                    [
-                        [
-                            f"Stage {i}: {' + '.join([TranslateHotKey()(k) for k in ks])}"
-                            for i, ks in enumerate(key)
-                        ]
-                    ]
-                )
-
-        def tryRespond(self, respond: bool, anyRespondingExceptThis: bool) -> bool:
-            """
-            ret: if key changed
-            """
-            if respond:
-                if self.stage == len(self.key) - 1:
-                    # progress completed
-                    self.stage = 0
-                    self.foo()
-                else:
-                    self.stage += 1
-            elif anyRespondingExceptThis:
-                self.stage = 0
-            return self.keyChangeOnStageChange[self.stage]
-
-        def GetNowKey(self):
-            return self.key[self.stage]
+            return " + ".join([TranslateHotKey()(k) for k in key[0]])
 
     @dataclasses.dataclass
     class Key:
@@ -489,19 +443,14 @@ class HotkeyManager:
         def GetKeyDown(self):
             return isKBDown(self.code)
 
-    def __init__(self, hotkeytasklist: list[hotkeytask]):
-        keyconcerned = [hka.key for hka in hotkeytasklist]
-        keyconcerned = list(itertools.chain.from_iterable(keyconcerned))
-        keyconcerned = list(itertools.chain.from_iterable(keyconcerned))
-        keyconcerned = Deduplicate(keyconcerned)
+    def __init__(self, hktl: list[hotkeytask]):
+        keyconcerned = Deduplicate(ArrayFlatten([hkt.key for hkt in hktl]))
         self.kc = [HotkeyManager.Key(k) for k in keyconcerned]
+        self.hktl = hktl
+        self.__calcPriorInfo()
 
         # clear all previous state
         [k.GetKeyDown() for k in self.kc]
-
-        self.hktl = hotkeytasklist
-        self.cch = HotkeyManager.ContiniousCallHandler()
-        self.__calcPriorInfo()
 
     def __calcPriorInfo(self):
         """
@@ -530,29 +479,21 @@ class HotkeyManager:
 
     def decideAllHotKey(self) -> list[bool]:
         keystate = {k.code: k.GetKeyDown() for k in self.kc}
-        cchblocked = not self.cch.updateState(keystate)
 
         class respondstate(enum.Enum):
             false = 0
             true = 1
             unknown = 2
 
-        respondtable = [
-            (
-                respondstate.unknown
-                if not cchblocked or hk.continiousPress
-                else respondstate.false
-            )
-            for hk in self.hktl
-        ]
+        respondtable = [respondstate.unknown for hk in self.hktl]
 
-        def decideRespondState(i):
+        def decideRespondState(i: int):
             # checked
             if respondtable[i] != respondstate.unknown:
                 return
 
             # all key pressed
-            if all([keystate[k] for k in self.hktl[i].GetNowKey()]):
+            if all([keystate[k] for k in self.hktl[i].key]):
                 # didnt check piored, check it
                 [
                     decideRespondState(p)
@@ -575,10 +516,6 @@ class HotkeyManager:
             decideRespondState(hkidx)
 
         assert all([rt != respondstate.unknown for rt in respondtable])
-        r = [
-            respondtable[hkidx] == respondstate.true
-            for hkidx, hk in enumerate(self.hktl)
-        ]
         return [
             respondtable[hkidx] == respondstate.true
             for hkidx, hk in enumerate(self.hktl)
@@ -603,141 +540,6 @@ class HotkeyManager:
                     raise e
         if anyKeyChanged:
             self.__calcPriorInfo()
-
-    @dataclasses.dataclass
-    class InputSession:
-        @dataclasses.dataclass
-        class SessionInstance:
-            class SessionEndType(enum.Enum):
-                UNSPECIFIED = 0
-                OK = 1
-                CANCEL = 2
-
-            FooSessionDoneCallback: typing.Callable[
-                [typing.Type["HotkeyManager.InputSession.SessionInstance"]], None
-            ] = None
-            content: str = ""
-            sessionEndType: SessionEndType = SessionEndType.UNSPECIFIED
-
-            def append(self, extraContent: str):
-                self.content += extraContent
-
-            def backSpace(self):
-                self.content = self.content[:-1]
-
-            def putup(self, bulletin: BulletinBoard):
-                bulletin.putup(self.content)
-
-        # foo that sets hkm and returns older hkm
-        FooSwapHKM: typing.Callable[["HotkeyManager"], "HotkeyManager"]
-        bulletin: BulletinBoard
-        RunningSessionInstance: SessionInstance = dataclasses.field(
-            default_factory=SessionInstance
-        )
-        hotkeymanagerStack: list["HotkeyManager"] = dataclasses.field(
-            default_factory=list
-        )
-
-        class InputTypeEnabled(enum.Enum):
-            NUMBER = 0
-            LETTER = 1
-
-        def __GetHotkeyReg(self, ite: list[InputTypeEnabled]):
-            @dataclasses.dataclass
-            class KeyMapping:
-                char: str
-                key: typing.Tuple[int]
-
-            AllKeyMapping = [
-                *(
-                    [KeyMapping(k, (ord(k),)) for i, k in enumerate("0123456789")]
-                    if HotkeyManager.InputSession.InputTypeEnabled.NUMBER in ite
-                    else []
-                ),
-                *(
-                    [
-                        *[
-                            KeyMapping(k, (ord(k.upper()),))
-                            for i, k in enumerate("abcdefghijklmnopqrstuvwxyz")
-                        ],
-                        *[
-                            KeyMapping(k, (win32con.VK_SHIFT, ord(k.upper())))
-                            for i, k in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-                        ],
-                    ]
-                    if HotkeyManager.InputSession.InputTypeEnabled.LETTER in ite
-                    else []
-                ),
-            ]
-            KeyIndexed = {k.key: k.char for k in AllKeyMapping}
-
-            def procKey(k):
-                self.RunningSessionInstance.append(KeyIndexed.get(k, "?"))
-                self.RunningSessionInstance.putup(self.bulletin)
-
-            HotkeyReg = [
-                HotkeyManager.hotkeytask(
-                    key=[k.key], foo=functools.partial(procKey, k.key)
-                )
-                for k in AllKeyMapping
-            ]
-
-            def backSpace():
-                self.RunningSessionInstance.backSpace()
-                self.RunningSessionInstance.putup(self.bulletin)
-
-            HotkeyReg.append(
-                HotkeyManager.hotkeytask(
-                    key=[win32con.VK_BACK],
-                    foo=backSpace,
-                )
-            )
-
-            def OutFromSession(
-                endType: HotkeyManager.InputSession.SessionInstance.SessionEndType,
-            ):
-                self.RunningSessionInstance.sessionEndType = endType
-                self.RunningSessionInstance.FooSessionDoneCallback(
-                    self.RunningSessionInstance
-                )
-                old = self.hotkeymanagerStack.pop()
-                inputer = self.FooSwapHKM(old)
-
-            HotkeyReg.extend(
-                [
-                    HotkeyManager.hotkeytask(
-                        key=[win32con.VK_ESCAPE],
-                        foo=functools.partial(
-                            OutFromSession,
-                            HotkeyManager.InputSession.SessionInstance.SessionEndType.CANCEL,
-                        ),
-                    ),
-                    HotkeyManager.hotkeytask(
-                        key=[win32con.VK_RETURN],
-                        foo=functools.partial(
-                            OutFromSession,
-                            HotkeyManager.InputSession.SessionInstance.SessionEndType.OK,
-                        ),
-                    ),
-                ]
-            )
-
-            return HotkeyReg
-
-        def IntoSession(
-            self, callback, allowedInputType: list[InputTypeEnabled] = None
-        ):
-            self.RunningSessionInstance = HotkeyManager.InputSession.SessionInstance(
-                callback
-            )
-            if not allowedInputType:
-                allowedInputType = [
-                    HotkeyManager.InputSession.InputTypeEnabled.NUMBER,
-                    HotkeyManager.InputSession.InputTypeEnabled.LETTER,
-                ]
-            inputer = HotkeyManager(self.__GetHotkeyReg(allowedInputType))
-            old = self.FooSwapHKM(inputer)
-            self.hotkeymanagerStack.append(old)
 
 
 def NormalizeCrlf(s: str):
