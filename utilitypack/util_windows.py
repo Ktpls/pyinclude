@@ -398,7 +398,10 @@ class TranslateHotKey:
 class HotkeyManager:
     """
     to piorer ctrl+c than c
-    responde no c after doing ctrl+c
+        if hotkeys ctrl+c and c are both binded,
+        on ctrl+c presented, only respond ctrl+c, and skip c
+        that is, match ctrl+c priorly than c
+        if match successed, skip lower priority keys
     key is given by win32con.VK_*,
         for letters, use ord([letter's UPPER case])
         for numbers, use ord([number])
@@ -410,24 +413,10 @@ class HotkeyManager:
         not severe problem
     """
 
-    @dataclasses.dataclass
-    class ContiniousCallHandler:
-        prevState: typing.Dict[int, bool] = dataclasses.field(default_factory=dict)
-        countiousPressTime: int = 0
-        startRepeatPeriod: int = 10
-        useControlOnContiniousPress: bool = True
-
-        def updateState(self, newState):
-            if DictEq(self.prevState, newState):
-                self.countiousPressTime += 1
-                return self.countiousPressTime >= self.startRepeatPeriod
-            else:
-                self.countiousPressTime = 0
-                self.prevState = newState
-                return True
-
     class hotkeytask:
         key: list[list[int]]
+        onKeyDown: typing.Callable = None
+        onKeyUp: typing.Callable = None
 
         def __init__(
             self,
