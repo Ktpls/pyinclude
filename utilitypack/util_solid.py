@@ -191,7 +191,7 @@ class Logger:
         self.f = open(path, "wb+")
 
     def log(self, content):
-        self.f.write((content + "\n").encode("utf8"))
+        self.f.write((str(content) + "\n").encode("utf8"))
         # self.f.flush()
 
     def __del__(self):
@@ -1386,9 +1386,9 @@ def Coalesce(*args):
     return None
 
 
-def mlambda(s: str, _globals=None, _locals=None):
+def mlambda(s: str, _globals=None, _locals=None) -> typing.Callable:
     exp = regex.compile(
-        r"^\s*def\s*(?<paraAndType>.*?):\s*\n(?<body>.+)$", flags=regex.DOTALL
+        r"^\s*def\s*(?<paraAndType>.*?):\s*\n?(?<body>.+)$", flags=regex.DOTALL
     )
     match = exp.match(s)
     if not match:
@@ -1400,25 +1400,12 @@ def mlambda(s: str, _globals=None, _locals=None):
     emptyLine = regex.compile("^\s*(#.*)?$", flags=regex.MULTILINE)
 
     def fixBodyIndent(body: str):
+        # force at least 1 space indent
         lines = body.splitlines()
-        originalBaseIndent = None
-        for l in lines:
-            if emptyLine.match(l):
-                continue
-            originalBaseIndent = len(l) - len(l.lstrip())
-        assert originalBaseIndent is not None, "bad indent"
-        newBodyIndent = 2
-        for i in range(len(lines)):
-            l = lines[i]
-            if emptyLine.match(l):
-                continue
-            for realIndentToTrim in range(0, originalBaseIndent):
-                if l[realIndentToTrim] not in (" ", "\t"):
-                    break
-            lines[i] = " " * newBodyIndent + l[realIndentToTrim:]
+        lines = [" " + l for l in lines]
         return "\n".join(lines)
 
-    # body = fixBodyIndent(body)
+    body = fixBodyIndent(body)
 
     func = None
     lambdaName = "_lambda_" + str(uuid.uuid1()).replace("-", "_")

@@ -104,59 +104,94 @@ def densityfilter(p, size, thresh):
     return np.logical_and(p, dence >= thresh)
 
 
-rgb2hsvmat = np.array(
-    [
+class ColorTr:
+
+    rgb2hsvmat = np.array(
         [
-            [np.cos(0), np.cos(2 / 3 * np.pi), np.cos(4 / 3 * np.pi)],
-            [np.sin(0), np.sin(2 / 3 * np.pi), np.sin(4 / 3 * np.pi)],
-            [1, 0, 0],
-        ],
-        [
-            [np.cos(0), np.cos(2 / 3 * np.pi), np.cos(4 / 3 * np.pi)],
-            [np.sin(0), np.sin(2 / 3 * np.pi), np.sin(4 / 3 * np.pi)],
-            [0, 1, 0],
-        ],
-        [
-            [np.cos(0), np.cos(2 / 3 * np.pi), np.cos(4 / 3 * np.pi)],
-            [np.sin(0), np.sin(2 / 3 * np.pi), np.sin(4 / 3 * np.pi)],
-            [0, 0, 1],
-        ],
-    ]
-)
-hsv2rgbmat = [np.linalg.inv(m) for m in rgb2hsvmat]
+            [
+                [np.cos(0), np.cos(2 / 3 * np.pi), np.cos(4 / 3 * np.pi)],
+                [np.sin(0), np.sin(2 / 3 * np.pi), np.sin(4 / 3 * np.pi)],
+                [1, 0, 0],
+            ],
+            [
+                [np.cos(0), np.cos(2 / 3 * np.pi), np.cos(4 / 3 * np.pi)],
+                [np.sin(0), np.sin(2 / 3 * np.pi), np.sin(4 / 3 * np.pi)],
+                [0, 1, 0],
+            ],
+            [
+                [np.cos(0), np.cos(2 / 3 * np.pi), np.cos(4 / 3 * np.pi)],
+                [np.sin(0), np.sin(2 / 3 * np.pi), np.sin(4 / 3 * np.pi)],
+                [0, 0, 1],
+            ],
+        ]
+    )
+    hsv2rgbmat = [np.linalg.inv(m) for m in rgb2hsvmat]
 
+    @staticmethod
+    def hsv2rgb(hsv):
+        # using value=max(r,g,b)
+        h, s, v = hsv
+        h = h * np.pi / 180
+        xyv = np.array([s * np.cos(h), s * np.sin(h), v])
 
-def hsv2rgb(hsv):
-    h, s, v = hsv
-    h = h * np.pi / 180
-    xyv = np.array([s * np.cos(h), s * np.sin(h), v])
+        # find the corresponding case
+        for c, m in enumerate(ColorTr.hsv2rgbmat):
+            rgb = m @ xyv
+            if np.argmax(rgb) == c:
+                return rgb
 
-    # find the corresponding case
-    for c, m in enumerate(hsv2rgbmat):
-        rgb = m @ xyv
-        if np.argmax(rgb) == c:
-            return rgb
+        # not possible, theoretically
+        return np.array((0, 0, 0))
 
-    # not possible, theoretically
-    return np.array((0, 0, 0))
+        # to view all solutions
+        # rgbs=np.zeros([3,3])
+        # for c,m in enumerate(mats):
+        #     rgbs[c]=np.linalg.inv(m)@xyv
+        # return rgbs
 
-    # to view all solutions
-    # rgbs=np.zeros([3,3])
-    # for c,m in enumerate(mats):
-    #     rgbs[c]=np.linalg.inv(m)@xyv
-    # return rgbs
+    @staticmethod
+    def rgb2hsv(rgb):
+        xyv = ColorTr.rgb2hsvmat[np.argmax(rgb)] @ rgb
+        x, y, v = xyv
+        hsv = np.array([180 / np.pi * np.arctan2(y, x), np.sqrt(x**2 + y**2), v])
+        return hsv
 
+    @staticmethod
+    def rgb2bgr(rgb):
+        m = np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]])
+        return m @ rgb
 
-def rgb2hsv(rgb):
-    xyv = rgb2hsvmat[np.argmax(rgb)] @ rgb
-    x, y, v = xyv
-    hsv = np.array([180 / np.pi * np.arctan2(y, x), np.sqrt(x**2 + y**2), v])
-    return hsv
+    @staticmethod
+    def hsv2rgb2(hsv):
+        """
+        converts h, s, v to hex rgb code
+        :param h: hue in degree
+        :param s: saturation, 0 to 1
+        :param v: value, 0 to 1
+        :return: hex rgb code
+        """
+        h, s, v = hsv
+        h %= 360
+        c = v * s
+        x = c * (1 - abs((h / 60) % 2 - 1))
+        m = v - c
 
+        if h < 60:
+            r, g, b = c, x, 0
+        elif h < 120:
+            r, g, b = x, c, 0
+        elif h < 180:
+            r, g, b = 0, c, x
+        elif h < 240:
+            r, g, b = 0, x, c
+        else:
+            r, g, b = x, 0, c
 
-def rgb2bgr(rgb):
-    m = np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]])
-    return m @ rgb
+        r += m
+        g += m
+        b += m
+
+        return np.array([r, g, b])
 
 
 def convolve_norm(m, k):
