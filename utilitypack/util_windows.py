@@ -420,12 +420,12 @@ class HotkeyManager:
         onKeyUp: typing.Callable[[], None] = None
 
         # inner field
-        _lastState: Switch = dataclasses.field(init=False, default=None)
+        _switch: Switch = dataclasses.field(init=False, default=None)
 
         def __post_init__(self) -> None:
             self.key = HotkeyManager.hotkeytask.formalize_key_param(self.key)
             # self.key is like [keyset1=[key1, key2], keyset2=[key3, key4]]
-            self._lastState = Switch(
+            self._switch = Switch(
                 onSetOn=self.onKeyDown, onSetOff=self.onKeyUp, initial=False
             )
 
@@ -531,7 +531,7 @@ class HotkeyManager:
         curHotkeyState = self.keyState2HotkeyState(keystate)
         for i,s in enumerate(curHotkeyState):
             try:
-                self.hktl[i]._lastState.setTo(s)
+                self.hktl[i]._switch.setTo(s)
             except Exception as e:
                 if printonerr:
                     traceback.print_exc()
