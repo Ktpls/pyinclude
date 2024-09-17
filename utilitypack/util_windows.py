@@ -338,7 +338,6 @@ def isKBDownNow(k):
     return win32api.GetAsyncKeyState(k) and 0x8000
 
 
-@Singleton
 class TranslateHotKey:
     dct = {
         win32con.VK_CONTROL: "Ctrl",
@@ -529,7 +528,7 @@ class HotkeyManager:
     def dispatchMessage(self, throwonerr=False, printonerr=False):
         keystate = {k.code: k.GetKeyDown() for k in self.kc}
         curHotkeyState = self.keyState2HotkeyState(keystate)
-        for i,s in enumerate(curHotkeyState):
+        for i, s in enumerate(curHotkeyState):
             try:
                 self.hktl[i]._switch.setTo(s)
             except Exception as e:
