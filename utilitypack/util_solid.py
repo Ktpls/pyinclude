@@ -1199,6 +1199,11 @@ def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
     return file
 
 
+@EasyWrapper
+def RunThis(f):
+    f()
+
+
 ################################################
 ################# not so solid #################
 ################################################
