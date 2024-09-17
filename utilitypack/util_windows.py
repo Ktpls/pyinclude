@@ -417,6 +417,7 @@ class HotkeyManager:
         key: list[int]
         onKeyDown: typing.Callable[[], None] = None
         onKeyUp: typing.Callable[[], None] = None
+        onKeyPress: typing.Callable[[], None] = None
 
         # inner field
         _switch: Switch = dataclasses.field(init=False, default=None)
@@ -439,7 +440,7 @@ class HotkeyManager:
         @staticmethod
         def getKeyRepr(key):
             key = HotkeyManager.hotkeytask.formalize_key_param(key)
-            return " + ".join([TranslateHotKey()(k) for k in key[0]])
+            return " + ".join([TranslateHotKey()(k) for k in key])
 
     @dataclasses.dataclass
     class Key:
@@ -531,6 +532,9 @@ class HotkeyManager:
         for i, s in enumerate(curHotkeyState):
             try:
                 self.hktl[i]._switch.setTo(s)
+                if s:
+                    if self.hktl[i].onKeyPress:
+                        self.hktl[i].onKeyPress()
             except Exception as e:
                 if printonerr:
                     traceback.print_exc()
@@ -671,6 +675,7 @@ class HotkeyManager:
             inputer = HotkeyManager(self.__GetHotkeyReg(allowedInputType))
             old = self.FooSwapHKM(inputer)
             self.hotkeymanagerStack.append(old)
+
 
 def NormalizeCrlf(s: str):
     return s.replace("\r\n", "\n").replace("\r", "\n")

@@ -117,7 +117,7 @@ class BulletinApp:
     def Hotkey(foo, self: "BulletinApp", name, key, continiousPress=None):
         print(f"{name:<20}{HotkeyManager.hotkeytask.getKeyRepr(key)}")
         self.hotkeytask.append(
-            HotkeyManager.hotkeytask(key=key, foo=foo, continiousPress=continiousPress)
+            HotkeyManager.hotkeytask(key=key, onKeyPress=foo)
         )
         return foo
 
@@ -143,11 +143,8 @@ class BulletinApp:
         # main loop
         while True:
             self.fpsm.WaitUntilNextFrame()
-
-            decideresult = self.hkm.decideAllHotKey()
-
             try:
-                self.hkm.doAllDecidedKey(decideresult, True, True)
+                self.hkm.dispatchMessage(True, True)
             except SystemExit as e:
                 raise e
             except Exception as e:
