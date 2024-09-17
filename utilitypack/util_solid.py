@@ -927,21 +927,36 @@ class Container:
         return self.__content is None
 
 
+@dataclasses.dataclass
 class Switch:
-    def __init__(self, onSetOn=None, onSetOff=None, initial=False):
-        self.__value = initial
-        self.onSetOn = onSetOn
-        self.onSetOff = onSetOff
+
+    onSetOn: typing.Callable[[], None] = None
+    onSetOff: typing.Callable[[], None] = None
+    initial: bool = False
+    skipRespondingOnStateUnchanged: bool = True
+    """
+    skipRespondingOnStateUnchanged
+        if true, onSetOn/onSetOff wont be called on calling on/off if its already in that on/off state
+    """
+
+    def __post_init__(self):
+        self.__value = self.initial
 
     def on(self):
-        self.__value = True
         if self.onSetOn is not None:
-            self.onSetOn()
+            if self.__value == True and self.skipRespondingOnStateUnchanged:
+                pass
+            else:
+                self.onSetOn()
+        self.__value = True
 
     def off(self):
-        self.__value = False
         if self.onSetOff is not None:
-            self.onSetOff()
+            if self.__value == False and self.skipRespondingOnStateUnchanged:
+                pass
+            else:
+                self.onSetOff()
+        self.__value = False
 
     def switch(self):
         if self():
