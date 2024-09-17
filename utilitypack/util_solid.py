@@ -943,6 +943,12 @@ class Switch:
         if self.onSetOff is not None:
             self.onSetOff()
 
+    def setTo(self, val):
+        if val:
+            self.on()
+        else:
+            self.off()
+
     def switch(self):
         if self():
             self.off()

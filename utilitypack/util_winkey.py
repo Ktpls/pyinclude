@@ -315,7 +315,14 @@ class win32conComp:
     VK_BACK_SLASH = VK_OEM_5
     VK_RIGHT_MID_BRACKET = VK_OEM_6
     VK_QUOTE = VK_OEM_7
-
+    @staticmethod
+    def KeyOf(key:str):
+        assert len(key)==1
+        if key.isalpha():
+            return ord(key.upper())
+        elif key.isdigit():
+            return ord(key)
+        raise ValueError(f'Unsupported key: {key}')
 
 virtualKeyCode2ScanCode = {
     win32conComp.VK_LBUTTON: keycodeWinScanCode.key_LeftMouseButton,

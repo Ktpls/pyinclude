@@ -419,9 +419,15 @@ class HotkeyManager:
         onKeyDown: typing.Callable[[], None] = None
         onKeyUp: typing.Callable[[], None] = None
 
+        # inner field
+        _lastState: Switch = dataclasses.field(init=False, default=None)
+
         def __post_init__(self) -> None:
             self.key = HotkeyManager.hotkeytask.formalize_key_param(self.key)
             # self.key is like [keyset1=[key1, key2], keyset2=[key3, key4]]
+            self._lastState = Switch(
+                onSetOn=self.onKeyDown, onSetOff=self.onKeyUp, initial=False
+            )
 
         @staticmethod
         def formalize_key_param(key):
@@ -460,8 +466,8 @@ class HotkeyManager:
 
         def piorered(a: HotkeyManager.hotkeytask, b: HotkeyManager.hotkeytask):
             def include(a: HotkeyManager.hotkeytask, b: HotkeyManager.hotkeytask):
-                for k in b.GetNowKey():
-                    if k not in a.GetNowKey():
+                for k in b.key:
+                    if k not in a.key:
                         return False
                 return True
 
@@ -477,8 +483,7 @@ class HotkeyManager:
             for bidx, b in enumerate(self.hktl)
         ]
 
-    def decideAllHotKey(self) -> list[bool]:
-        keystate = {k.code: k.GetKeyDown() for k in self.kc}
+    def keyState2HotkeyState(self, keystate) -> list[bool]:
 
         class respondstate(enum.Enum):
             false = 0
@@ -521,25 +526,17 @@ class HotkeyManager:
             for hkidx, hk in enumerate(self.hktl)
         ]
 
-    def doAllDecidedKey(self, decideresult, throwonerr=False, printonerr=False):
-        AnyRespondingExceptThis = [
-            any([(rb if i != j else False) for j, rb in enumerate(decideresult)])
-            for i, ra in enumerate(decideresult)
-        ]
-        anyKeyChanged = False
-        for i in range(len(decideresult)):
+    def dispatchMessage(self, throwonerr=False, printonerr=False):
+        keystate = {k.code: k.GetKeyDown() for k in self.kc}
+        curHotkeyState = self.keyState2HotkeyState(keystate)
+        for i,s in enumerate(curHotkeyState):
             try:
-                thisKeyChanged = self.hktl[i].tryRespond(
-                    decideresult[i], AnyRespondingExceptThis[i]
-                )
-                anyKeyChanged = anyKeyChanged or thisKeyChanged
+                self.hktl[i]._lastState.setTo(s)
             except Exception as e:
                 if printonerr:
                     traceback.print_exc()
                 if throwonerr:
                     raise e
-        if anyKeyChanged:
-            self.__calcPriorInfo()
 
 
 def NormalizeCrlf(s: str):
