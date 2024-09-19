@@ -62,29 +62,28 @@ class ZFunc:
     """
 
     def __init__(self, x1, y1, x2, y2) -> None:
+        assert np.fabs(x1 - x2) > EPS
         if x1 < x2:
-            # [lower on x or higher on x, x or y]
-            self.pt = np.array([[x1, y1], [x2, y2]])
+            ptleft = np.array([x1, y1])
+            ptright = np.array([x2, y2])
         else:
-            self.pt = np.array([[x2, y2], [x1, y1]])
-        self.slope = (self.pt[1, 1] - self.pt[0, 1]) / (
-            self.pt[1, 0] - self.pt[0, 0] + 0.0001
-        )
-        self.bias = self.pt[0, 1] - self.pt[0, 0] * self.slope
+            ptright = np.array([x1, y1])
+            ptleft = np.array([x2, y2])
+        self.yminmax = np.array([min(y1, y2), max(y1, y2)])
+        self.slope = (ptright[1] - ptleft[1]) / (ptright[0] - ptleft[0])
+        self.bias = ptleft[1] - self.slope * ptleft[0]
 
     def __CallOnNDArray(self, x: np.ndarray):
         y = self.slope * x + self.bias
-        y[x < self.pt[0, 0]] = self.pt[0, 1]
-        y[x > self.pt[1, 0]] = self.pt[1, 1]
+        y = np.clip(y, self.yminmax[0], self.yminmax[1])
         return y
 
     def __CallOnNum(self, x):
-        if x < self.pt[0, 0]:
-            y = self.pt[0, 1]
-        elif x > self.pt[1, 0]:
-            y = self.pt[1, 1]
-        else:
-            y = self.slope * x + self.bias
+        y = self.slope * x + self.bias
+        if y < self.yminmax[0]:
+            y = self.yminmax[0]
+        elif y > self.yminmax[1]:
+            y = self.yminmax[1]
         return y
 
     def __call__(self, x):
@@ -132,7 +131,7 @@ class BayesEstimator:
     distributionModel: typing.Callable  # to calc P(measuredVal=B|val=A)
     logPBASum: np.ndarray = dataclasses.field(init=False, default=None)
 
-    logSumLowerLimit = -500
+    logSumLowerLimit = -100
 
     def __post_init__(self):
         self.logPBASum = np.zeros_like(self.xspace)
@@ -140,10 +139,10 @@ class BayesEstimator:
     def update(self, measuredValue: float | list[float] | np.ndarray):
         measuredValue = NormalizeIterableOrSingleArgToNdarray(measuredValue)
         measuredValue = np.array(measuredValue)
-        PBA = self.distributionModel(
+        P_B_under_A = self.distributionModel(
             self.xspace.reshape((-1, 1)), measuredValue.reshape((1, -1))
         )
-        self.logPBASum += np.sum(SafeLog(PBA), axis=1)
+        self.logPBASum += np.sum(SafeLog(P_B_under_A), axis=1)
         self.logPBASum -= np.max(self.logPBASum)
         self.logPBASum[self.logPBASum < BayesEstimator.logSumLowerLimit] = (
             BayesEstimator.logSumLowerLimit
@@ -153,50 +152,6 @@ class BayesEstimator:
         possibility = SafeExp(self.logPBASum)
         possibility /= np.sum(possibility)
         return possibility
-
-
-"""
-xls
-"""
-
-import openpyxl as opx
-
-
-def save_list_to_xls(
-    data_list: list[list | tuple | typing.Any], filename, sheetname=None
-):
-    # Create a new workbook
-    wb = opx.Workbook()
-
-    # Select the active worksheet
-    if sheetname is None:
-        ws = wb.active
-    else:
-        ws = wb.create_sheet(sheetname)
-
-    # Iterate over the list and write each item to a new row
-    for row, rowcontent in enumerate(data_list):
-        rowcontent = NormalizeIterableOrSingleArgToIterable(rowcontent)
-        for col, item in enumerate(rowcontent):
-            ws.cell(row=row + 1, column=col + 1, value=item)
-
-    # Save the workbook to the specified filename
-    wb.save(filename)
-
-
-def Xls2ListList(path=None, sheetname=None, killNones=True):
-    if path is None:
-        path = r"eles.in.xlsx"
-    xls = opx.load_workbook(path)
-    if sheetname is None:
-        sheet = xls.active
-    else:
-        sheet = xls[sheetname]
-
-    ret = [[ele.value for ele in ln] for ln in (sheet.rows)]
-    if killNones:
-        ret = [l for l in ret if any([e is not None for e in l])]
-    return ret
 
 
 def NpGeneratorFromStrSeed(s: str):

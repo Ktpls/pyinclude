@@ -1,5 +1,6 @@
-import matplotlib.pyplot as plt
 from .util_np import *
+
+import matplotlib.pyplot as plt
 
 
 def NewPyPlotAxis():

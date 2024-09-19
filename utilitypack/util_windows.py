@@ -398,7 +398,10 @@ class TranslateHotKey:
 class HotkeyManager:
     """
     to piorer ctrl+c than c
-    responde no c after doing ctrl+c
+        if hotkeys ctrl+c and c are both binded,
+        on ctrl+c presented, only respond ctrl+c, and skip c
+        that is, match ctrl+c priorly than c
+        if match successed, skip lower priority keys
     key is given by win32con.VK_*,
         for letters, use ord([letter's UPPER case])
         for numbers, use ord([number])
@@ -411,49 +414,25 @@ class HotkeyManager:
     """
 
     @dataclasses.dataclass
-    class ContiniousCallHandler:
-        prevState: typing.Dict[int, bool] = dataclasses.field(default_factory=dict)
-        countiousPressTime: int = 0
-        startRepeatPeriod: int = 10
-        useControlOnContiniousPress: bool = True
-
-        def updateState(self, newState):
-            if DictEq(self.prevState, newState):
-                self.countiousPressTime += 1
-                return self.countiousPressTime >= self.startRepeatPeriod
-            else:
-                self.countiousPressTime = 0
-                self.prevState = newState
-                return True
-
     class hotkeytask:
-        key: list[list[int]]
+        key: list[int]
+        onKeyDown: typing.Callable[[], None] = None
+        onKeyUp: typing.Callable[[], None] = None
+        onKeyPress: typing.Callable[[], None] = None
 
-        def __init__(
-            self,
-            key: int | typing.Iterable[int] | typing.Iterable[typing.Iterable[int]],
-            foo: typing.Callable[[], None],
-            continiousPress: bool = None,
-        ) -> None:
-            self.key = HotkeyManager.hotkeytask.formalize_key_param(key)
+        # inner field
+        _switch: Switch = dataclasses.field(init=False, default=None)
+
+        def __post_init__(self) -> None:
+            self.key = HotkeyManager.hotkeytask.formalize_key_param(self.key)
             # self.key is like [keyset1=[key1, key2], keyset2=[key3, key4]]
-            self.foo = foo
-            self.continiousPress = continiousPress if continiousPress else False
-            self.stage = 0
-            self.keyChangeOnStageChange = [
-                (
-                    ListEq(self.key[i], self.key[i - 1])
-                    if i != 0
-                    else ListEq(self.key[0], self.key[-1])
-                )
-                for i, k in enumerate(self.key)
-            ]
+            self._switch = Switch(
+                onSetOn=self.onKeyDown, onSetOff=self.onKeyUp, initial=False
+            )
 
         @staticmethod
         def formalize_key_param(key):
             if not isinstance(key, typing.Iterable):
-                key = [[key]]
-            elif not isinstance(key[0], typing.Iterable):
                 key = [key]
             else:
                 key = key
@@ -462,36 +441,7 @@ class HotkeyManager:
         @staticmethod
         def getKeyRepr(key):
             key = HotkeyManager.hotkeytask.formalize_key_param(key)
-            if len(key) == 1:
-                # only one stage
-                return " + ".join([TranslateHotKey()(k) for k in key[0]])
-            else:
-                return "\n".join(
-                    [
-                        [
-                            f"Stage {i}: {' + '.join([TranslateHotKey()(k) for k in ks])}"
-                            for i, ks in enumerate(key)
-                        ]
-                    ]
-                )
-
-        def tryRespond(self, respond: bool, anyRespondingExceptThis: bool) -> bool:
-            """
-            ret: if key changed
-            """
-            if respond:
-                if self.stage == len(self.key) - 1:
-                    # progress completed
-                    self.stage = 0
-                    self.foo()
-                else:
-                    self.stage += 1
-            elif anyRespondingExceptThis:
-                self.stage = 0
-            return self.keyChangeOnStageChange[self.stage]
-
-        def GetNowKey(self):
-            return self.key[self.stage]
+            return " + ".join([TranslateHotKey()(k) for k in key])
 
     @dataclasses.dataclass
     class Key:
@@ -500,19 +450,14 @@ class HotkeyManager:
         def GetKeyDown(self):
             return isKBDown(self.code)
 
-    def __init__(self, hotkeytasklist: list[hotkeytask]):
-        keyconcerned = [hka.key for hka in hotkeytasklist]
-        keyconcerned = list(itertools.chain.from_iterable(keyconcerned))
-        keyconcerned = list(itertools.chain.from_iterable(keyconcerned))
-        keyconcerned = Deduplicate(keyconcerned)
+    def __init__(self, hktl: list[hotkeytask]):
+        keyconcerned = Deduplicate(ArrayFlatten([hkt.key for hkt in hktl]))
         self.kc = [HotkeyManager.Key(k) for k in keyconcerned]
+        self.hktl = hktl
+        self.__calcPriorInfo()
 
         # clear all previous state
         [k.GetKeyDown() for k in self.kc]
-
-        self.hktl = hotkeytasklist
-        self.cch = HotkeyManager.ContiniousCallHandler()
-        self.__calcPriorInfo()
 
     def __calcPriorInfo(self):
         """
@@ -522,8 +467,8 @@ class HotkeyManager:
 
         def piorered(a: HotkeyManager.hotkeytask, b: HotkeyManager.hotkeytask):
             def include(a: HotkeyManager.hotkeytask, b: HotkeyManager.hotkeytask):
-                for k in b.GetNowKey():
-                    if k not in a.GetNowKey():
+                for k in b.key:
+                    if k not in a.key:
                         return False
                 return True
 
@@ -539,31 +484,22 @@ class HotkeyManager:
             for bidx, b in enumerate(self.hktl)
         ]
 
-    def decideAllHotKey(self) -> list[bool]:
-        keystate = {k.code: k.GetKeyDown() for k in self.kc}
-        cchblocked = not self.cch.updateState(keystate)
+    def keyState2HotkeyState(self, keystate) -> list[bool]:
 
         class respondstate(enum.Enum):
             false = 0
             true = 1
             unknown = 2
 
-        respondtable = [
-            (
-                respondstate.unknown
-                if not cchblocked or hk.continiousPress
-                else respondstate.false
-            )
-            for hk in self.hktl
-        ]
+        respondtable = [respondstate.unknown for hk in self.hktl]
 
-        def decideRespondState(i):
+        def decideRespondState(i: int):
             # checked
             if respondtable[i] != respondstate.unknown:
                 return
 
             # all key pressed
-            if all([keystate[k] for k in self.hktl[i].GetNowKey()]):
+            if all([keystate[k] for k in self.hktl[i].key]):
                 # didnt check piored, check it
                 [
                     decideRespondState(p)
@@ -586,34 +522,25 @@ class HotkeyManager:
             decideRespondState(hkidx)
 
         assert all([rt != respondstate.unknown for rt in respondtable])
-        r = [
-            respondtable[hkidx] == respondstate.true
-            for hkidx, hk in enumerate(self.hktl)
-        ]
         return [
             respondtable[hkidx] == respondstate.true
             for hkidx, hk in enumerate(self.hktl)
         ]
 
-    def doAllDecidedKey(self, decideresult, throwonerr=False, printonerr=False):
-        AnyRespondingExceptThis = [
-            any([(rb if i != j else False) for j, rb in enumerate(decideresult)])
-            for i, ra in enumerate(decideresult)
-        ]
-        anyKeyChanged = False
-        for i in range(len(decideresult)):
+    def dispatchMessage(self, throwonerr=False, printonerr=False):
+        keystate = {k.code: k.GetKeyDown() for k in self.kc}
+        curHotkeyState = self.keyState2HotkeyState(keystate)
+        for i, s in enumerate(curHotkeyState):
             try:
-                thisKeyChanged = self.hktl[i].tryRespond(
-                    decideresult[i], AnyRespondingExceptThis[i]
-                )
-                anyKeyChanged = anyKeyChanged or thisKeyChanged
+                self.hktl[i]._switch.setTo(s)
+                if s:
+                    if self.hktl[i].onKeyPress:
+                        self.hktl[i].onKeyPress()
             except Exception as e:
                 if printonerr:
                     traceback.print_exc()
                 if throwonerr:
                     raise e
-        if anyKeyChanged:
-            self.__calcPriorInfo()
 
     @dataclasses.dataclass
     class InputSession:

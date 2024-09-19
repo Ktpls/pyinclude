@@ -89,8 +89,8 @@ def savemodel(model: torch.nn.Module, path):
     print(f"Saved PyTorch Model State to {path}")
 
 
-def tensorimg2ndarray(m):
-    m = np.array(m)
+def tensorimg2ndarray(m: torch.Tensor):
+    m = m.cpu().numpy()
     if not len(m.shape) == 2:  # not single channeled
         m = np.moveaxis(m, -3, -1)
     return m
@@ -311,12 +311,13 @@ class trainpipe:
         trainmainprogress,
         epochnum=10,
         outputperbatchnum=100,
+        device="cpu",
         customSubOnOutput=None,
     ):
         epochs = epochnum
         start_time = time.time()
         for ep in range(epochs):
-            print(f"Epoch {ep+1}")
+            print(f"Epoch {ep}")
             print("-------------------------------")
 
             # train
@@ -331,8 +332,8 @@ class trainpipe:
                     print(
                         f"Training speed: {outputperbatchnum/(end_time-start_time):>5f} batches per second"
                     )
-                    aveloss = loss.item() / batchsizeof(datatuple[0])
-                    print(f"Average loss: {aveloss:>7f}")
+                    aveloss = loss.item()
+                    print(f"Instant loss: {aveloss:>7f}")
                     if customSubOnOutput is not None:
                         customSubOnOutput(batch, aveloss)
                     start_time = time.time()
@@ -341,7 +342,7 @@ class trainpipe:
         print("Done!")
 
 
-class ConvBnHs(torch.nn.Module):
+class ConvNormInsp(torch.nn.Module):
     def __init__(
         self,
         in_channels,
@@ -349,22 +350,46 @@ class ConvBnHs(torch.nn.Module):
         kernel_size=3,
         stride=1,
         padding="same",
-        ifBn=True,
+        norm=None,
+        insp=None,
     ):
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels, out_channels, kernel_size, stride=stride, padding=padding
         )
-        self.bn = torch.nn.BatchNorm2d(out_channels) if ifBn else None
-        self.ifBn = ifBn
-        self.hs = torch.nn.Hardswish()
+        self.norm = norm
+        self.insp = insp
 
     def forward(self, x):
         x = self.conv(x)
-        if self.bn is not None:
-            x = self.bn(x)
-        x = self.hs(x)
+        if self.norm is not None:
+            x = self.norm(x)
+        x = self.insp(x)
         return x
+
+
+class ConvGnHs(ConvNormInsp):
+    def __init__(self, in_channels, out_channels, numGroup=4, *a, **kw):
+        super().__init__(
+            in_channels,
+            out_channels,
+            norm=torch.nn.GroupNorm(numGroup, out_channels),
+            insp=torch.nn.Hardswish(),
+            *a,
+            **kw,
+        )
+
+
+class ConvBnHs(ConvNormInsp):
+    def __init__(self, in_channels, out_channels, *a, **kw):
+        super().__init__(
+            in_channels,
+            out_channels,
+            norm=torch.nn.BatchNorm2d(out_channels),
+            insp=torch.nn.Hardswish(),
+            *a,
+            **kw,
+        )
 
 
 class OneShotAggregationResThrough(torch.nn.Module):
@@ -417,6 +442,7 @@ class ModelDemo:
             for i in range(self.iterNum):
                 self.iterWork(i)
 
+
 class GlobalAvgPooling(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -427,3 +453,68 @@ class GlobalAvgPooling(torch.nn.Module):
 
     def forward(self, x):
         return GlobalAvgPooling.static_forward(x)
+
+
+def setModuleFree(backbone: torch.nn.Module, freeLayers):
+    for name, param in backbone.named_parameters():
+        if any([name.startswith(fl) for fl in freeLayers]):
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+    return backbone
+
+
+def getmodel(model0: torch.nn.Module, *arg, **kwarg):
+    model = setModule(model0, *arg, **kwarg)
+    paramNum = np.sum(
+        [p.numel() for n, p in model.named_parameters() if p.requires_grad]
+    )
+    print(f"{paramNum=}")
+    # print(model)
+    return model
+
+
+class FinalModule(torch.nn.Module):
+    def parameters(
+        self, recurse: bool = True
+    ) -> typing.Iterator[torch.nn.parameter.Parameter]:
+        return filter(
+            lambda x: x.requires_grad is not False, super().parameters(recurse)
+        )
+
+    def calcloss(self, *arg, **kw): ...
+
+    def trainprogress(self, datatuple): ...
+
+    def inferenceProgress(self, datatuple): ...
+
+    def load(self, path):
+        getmodel(self, path)
+        return self
+
+    def save(self, path):
+        savemodel(self, path)
+
+
+class MPn(torch.nn.Module):
+    def __init__(self, in_channels, n_value=1, downSamplingStride=2):
+        super().__init__()
+        self.in_channels = in_channels
+        assert in_channels % 2 == 0
+        out_channels = n_value * in_channels
+        self.out_channels = out_channels
+        cPath = out_channels // 2
+        self.wayPooling = torch.nn.Sequential(
+            torch.nn.MaxPool2d(downSamplingStride, downSamplingStride),
+            ConvGnHs(in_channels, cPath),
+        )
+        self.wayConv = torch.nn.Sequential(
+            ConvGnHs(in_channels, cPath, kernel_size=1),
+            ConvGnHs(cPath, cPath, stride=downSamplingStride, padding=1),
+        )
+        self.combiner = ConvGnHs(cPath * 2, out_channels)
+
+    def forward(self, x):
+        o_pool = self.wayPooling(x)
+        o_conv = self.wayConv(x)
+        return self.combiner(torch.concat([o_pool, o_conv], dim=1))
