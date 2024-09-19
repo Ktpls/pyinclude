@@ -4,7 +4,6 @@ from utilitypack.util_windows import *
 from utilitypack.util_winkey import *
 
 
-@RunThis
 def HotkeyManagerDemo():
     hkm = HotkeyManager(
         [

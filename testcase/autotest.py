@@ -22,51 +22,85 @@ class ExpparserTest(unittest.TestCase):
         "vecadd": vecadd,
     }
 
-    def do(self, exp: str, expected):
-        try:
-            result = str(
-                expparser.expparse(
-                    exp,
-                    var=ExpparserTest.var,
-                    func=ExpparserTest.func,
-                )
+    def expparseWithEnv(self, exp):
+        return str(
+            expparser.expparse(
+                exp,
+                var=ExpparserTest.var,
+                func=ExpparserTest.func,
             )
-        except Exception as e:
-            # raise e
-            result = e
-        if expected == Exception and isinstance(result, expected):
-            pass
-        else:
-            self.assertEqual(result, expected)
+        )
 
-    test_cstr = lambda self: self.do(r"CStr(1)", "1.0")
-    test_array = lambda self: self.do(r"1,2,3", "[1.0, 2.0, 3.0]")
-    test_div = lambda self: self.do(r"2/2/2", "0.5")
-    test_oper_priortiy = lambda self: self.do(r"sin(pi/2)+2^2*2+--1", "10.0")
-    test_eq_func = lambda self: self.do(r"eq(1+0.1,1)", "False")
-    test_eq_func_eps = lambda self: self.do(r"eq(1+0.1,1,0.2)", "True")
-    test_str = lambda self: self.do(r'"test \" str"', 'test " str')
-    test_eq_opr = lambda self: self.do(r"1!=2", "True")
-    test_comp_opr = lambda self: self.do(r"2>=3", "False")
-    test_clist = lambda self: self.do(r"CList(1)", "[1.0]")
-    test_cbool = lambda self: self.do(r"CBool(1)", "True")
-    test_cbool2 = lambda self: self.do(r"CBool(0)", "False")
-    test_streq = lambda self: self.do(r'StrEq(CStr(1),"1.0")', "True")
-    test_cnum = lambda self: self.do(r'CNum("1.23")+1', "2.23")
-    test_cnum2 = lambda self: self.do(r"CNum(true)+1", "2.0")
-    test_unmatched_ket = lambda self: self.do(r"CBool(0))))))))", "False")
-    test_space = lambda self: self.do("1 ,\t2,\r\n3", "[1.0, 2.0, 3.0]")
-    test_vector = lambda self: self.do(r"vecadd((1,2),(3,4))", "[4.0, 6.0]")
-    test_optional_func = lambda self: self.do(r"OptionalFunc(1,,)", "1.0")
-    test_opt_func_bad_use = lambda self: self.do(r"OptionalFunc(,1,)", Exception)
-    test_complex_array = (
-        lambda self: self.do(
-            r"((1,1),(2,2),(1,),1)", "[[1.0, 1.0], [2.0, 2.0], [1.0, None], 1.0]"
-        ),
-    )
-    test_comment = (
-        lambda self: self.do(
-            r"""
+    def test_cstr(self):
+        self.assertEqual(self.expparseWithEnv("CStr(1)"), "1.0")
+
+    def test_array(self):
+        self.assertEqual(self.expparseWithEnv(r"1,2,3"), "[1.0, 2.0, 3.0]")
+
+    def test_div(self):
+        self.assertEqual(self.expparseWithEnv(r"2/2/2"), "0.5")
+
+    def test_oper_priority(self):
+        self.assertEqual(self.expparseWithEnv(r"sin(pi/2)+2^2*2+--1"), "10.0")
+
+    def test_eq_func(self):
+        self.assertEqual(self.expparseWithEnv(r"eq(1+0.1,1)"), "False")
+
+    def test_eq_func_eps(self):
+        self.assertEqual(self.expparseWithEnv(r"eq(1+0.1,1,0.2)"), "True")
+
+    def test_str(self):
+        self.assertEqual(self.expparseWithEnv(r'"test \" str"'), 'test " str')
+
+    def test_eq_opr(self):
+        self.assertEqual(self.expparseWithEnv(r"1!=2"), "True")
+
+    def test_comp_opr(self):
+        self.assertEqual(self.expparseWithEnv(r"2>=3"), "False")
+
+    def test_clist(self):
+        self.assertEqual(self.expparseWithEnv(r"CList(1)"), "[1.0]")
+
+    def test_cbool(self):
+        self.assertEqual(self.expparseWithEnv(r"CBool(1)"), "True")
+
+    def test_cbool2(self):
+        self.assertEqual(self.expparseWithEnv(r"CBool(0)"), "False")
+
+    def test_streq(self):
+        self.assertEqual(self.expparseWithEnv(r'StrEq(CStr(1),"1.0")'), "True")
+
+    def test_cnum(self):
+        self.assertEqual(self.expparseWithEnv(r'CNum("1.23")+1'), "2.23")
+
+    def test_cnum2(self):
+        self.assertEqual(self.expparseWithEnv(r"CNum(true)+1"), "2.0")
+
+    def test_unmatched_ket(self):
+        self.assertEqual(self.expparseWithEnv(r"CBool(0))))))))"), "False")
+
+    def test_space(self):
+        self.assertEqual(self.expparseWithEnv("1 ,\t2,\r\n3"), "[1.0, 2.0, 3.0]")
+
+    def test_vector(self):
+        self.assertEqual(self.expparseWithEnv(r"vecadd((1,2),(3,4))"), "[4.0, 6.0]")
+
+    def test_optional_func(self):
+        self.assertEqual(self.expparseWithEnv(r"OptionalFunc(1,,)"), "1.0")
+
+    def test_opt_func_bad_use(self):
+        self.assertRaises(Exception, lambda: self.expparseWithEnv(r"OptionalFunc(,1,)"))
+
+    def test_complex_array(self):
+        self.assertEqual(
+            self.expparseWithEnv(r"((1,1),(2,2),(1,),1)"),
+            "[[1.0, 1.0], [2.0, 2.0], [1.0, None], 1.0]",
+        )
+
+    def test_complex_array(self):
+        self.assertEqual(
+            self.expparseWithEnv(
+                r"""
                 //comment one
                 1
                 /*
@@ -74,10 +108,34 @@ class ExpparserTest(unittest.TestCase):
                 two
                 */
                 +/*inline comment*/1
-                """,
+                """
+            ),
             "2.0",
-        ),
-    )
+        )
+
+
+class UrlFullResolutionLazyTest(unittest.TestCase):
+    def test_of(self):
+        res = UrlFullResolution.of(
+            r"https://picx.zhimg.com/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg?source=32738c0c&needBackground=1"
+        )
+        res.calcAll()
+        self.assertDictEqual(
+            res._resultMap,
+            {
+                "baseHost": "zhimg.com",
+                "domain": "com",
+                "extName": ".jpg",
+                "fileName": "v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg",
+                "folder": "",
+                "host": "picx.zhimg.com",
+                "param": "?source=32738c0c&needBackground=1",
+                "path": "/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg",
+                "port": None,
+                "protocol": "https://",
+                "secondaryHost": "picx",
+            },
+        )
 
 
 unittest.main()

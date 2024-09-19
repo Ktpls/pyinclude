@@ -1336,17 +1336,69 @@ try:
     class UrlFullResolution:
 
         url: str | None
-        protocol: str | None
-        host: str | None
-        path: str | None
-        param: str | None
-        secondaryHost: str | None
-        baseHost: str | None
-        domain: str | None
-        port: str | None
-        folder: str | None
-        fileName: str | None
-        extName: str | None
+        _resultMap: dict = dataclasses.field(init=False, default_factory=dict)
+
+        class _Scopes:
+            protocol = "protocol"
+            host = "host"
+            path = "path"
+            param = "param"
+            secondaryHost = "secondaryHost"
+            baseHost = "baseHost"
+            domain = "domain"
+            port = "port"
+            folder = "folder"
+            fileName = "fileName"
+            extName = "extName"
+
+        def _ReadOrCalculate(self, name):
+            if self._isUncalculatedScope(name):
+                if name in [
+                    UrlFullResolution._Scopes.protocol,
+                    UrlFullResolution._Scopes.host,
+                    UrlFullResolution._Scopes.path,
+                    UrlFullResolution._Scopes.param,
+                ]:
+                    self._parseStepGlobally()
+                elif name in [
+                    UrlFullResolution._Scopes.secondaryHost,
+                    UrlFullResolution._Scopes.baseHost,
+                    UrlFullResolution._Scopes.domain,
+                    UrlFullResolution._Scopes.port,
+                ]:
+                    self._parseStepHost()
+                elif name in [
+                    UrlFullResolution._Scopes.folder,
+                    UrlFullResolution._Scopes.fileName,
+                    UrlFullResolution._Scopes.extName,
+                ]:
+                    self._parseStepPath()
+            return self._GetScope(name)
+
+        def _isUncalculatedScope(self, name):
+            return name not in self._resultMap
+
+        def _GetScope(self, name):
+            return self._resultMap[name]
+
+        def _SetScope(self, name, val):
+            self._resultMap[name] = val
+
+        @staticmethod
+        def _scope(n):
+            return property(lambda self: self._ReadOrCalculate(n))
+
+        protocol = _scope(_Scopes.protocol)
+        host = _scope(_Scopes.host)
+        path = _scope(_Scopes.path)
+        param = _scope(_Scopes.param)
+        secondaryHost = _scope(_Scopes.secondaryHost)
+        baseHost = _scope(_Scopes.baseHost)
+        domain = _scope(_Scopes.domain)
+        port = _scope(_Scopes.port)
+        folder = _scope(_Scopes.folder)
+        fileName = _scope(_Scopes.fileName)
+        extName = _scope(_Scopes.extName)
 
         class RegPool:
             globally = regex.compile(
@@ -1354,34 +1406,50 @@ try:
             )
             host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
             path = regex.compile(
-                r"^(?<folder>.+?)(?:/(?<fileName>[^/]+(?<extName>\..*)))?$"
+                r"^(?<folder>.*?)(?:/(?<fileName>[^/]+?(?<extName>\..*)?))?$"
             )
 
         class UnexpectedException(Exception): ...
 
-        @staticmethod
-        def of(url: str):
-            url = PathNormalize(url)
-            (
-                protocol,
-                host,
-                path,
-                param,
-                secondaryHost,
-                baseHost,
-                domain,
-                port,
-                folder,
-                fileName,
-                extName,
-            ) = [None] * 11
-            matchGlobally = UrlFullResolution.RegPool.globally.match(url)
-            if matchGlobally is not None:
-                protocol, host, path, param = matchGlobally.group(
-                    "protcol", "host", "path", "param"
-                )
-                if host is not None:
-                    matchHost = UrlFullResolution.RegPool.host.match(host)
+        def _parseStepGlobally(self):
+            if any(
+                [
+                    self._isUncalculatedScope(n)
+                    for n in [
+                        UrlFullResolution._Scopes.protocol,
+                        UrlFullResolution._Scopes.host,
+                        UrlFullResolution._Scopes.path,
+                        UrlFullResolution._Scopes.param,
+                    ]
+                ]
+            ):
+                protocol, host, path, param = [None] * 4
+                if self.url is not None:
+                    matchGlobally = UrlFullResolution.RegPool.globally.match(self.url)
+                    if matchGlobally is not None:
+                        protocol, host, path, param = matchGlobally.group(
+                            "protcol", "host", "path", "param"
+                        )
+                self._SetScope(UrlFullResolution._Scopes.protocol, protocol)
+                self._SetScope(UrlFullResolution._Scopes.host, host)
+                self._SetScope(UrlFullResolution._Scopes.path, path)
+                self._SetScope(UrlFullResolution._Scopes.param, param)
+
+        def _parseStepHost(self):
+            if any(
+                [
+                    self._isUncalculatedScope(n)
+                    for n in [
+                        UrlFullResolution._Scopes.port,
+                        UrlFullResolution._Scopes.secondaryHost,
+                        UrlFullResolution._Scopes.baseHost,
+                        UrlFullResolution._Scopes.domain,
+                    ]
+                ]
+            ):
+                secondaryHost, baseHost, domain, port = [None] * 4
+                if self.host is not None:
+                    matchHost = UrlFullResolution.RegPool.host.match(self.host)
                     if matchHost is not None:
                         hostNoPort, port = matchHost.group("host", "port")
                         lHost = hostNoPort.split(".")
@@ -1396,189 +1464,32 @@ try:
                             secondaryHost = ".".join(lHost[0:-2])
                             baseHost = ".".join(lHost[-2:])
                             domain = lHost[-1]
-                if path is not None:
-                    matchPath = UrlFullResolution.RegPool.path.match(
-                        path,
-                    )
-                    if matchPath is not None:
-                        folder, fileName, extName = matchPath.group(
-                            "folder", "fileName", "extName"
-                        )
-
-            return UrlFullResolution(
-                url=url,
-                protocol=protocol,
-                host=host,
-                path=path,
-                param=param,
-                secondaryHost=secondaryHost,
-                baseHost=baseHost,
-                domain=domain,
-                port=port,
-                folder=folder,
-                fileName=fileName,
-                extName=extName,
-            )
-            
-                
-
-    @dataclasses.dataclass
-    class UrlFullResolutionLazy:
-        class Uncalculated: ...
-
-        url: str | None
-        ensureAllCalculated: bool = False
-        protocol: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        host: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        path: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        param: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        secondaryHost: "str | None | UrlFullResolutionLazy.Uncalculated" = (
-            dataclasses.field(init=False, default=Uncalculated)
-        )
-        baseHost: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        domain: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        port: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        folder: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        fileName: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-        extName: "str | None | UrlFullResolutionLazy.Uncalculated" = dataclasses.field(
-            init=False, default=Uncalculated
-        )
-
-        def __getattribute__(self, name: str):
-            if name in [
-                "protocol",
-                "host",
-                "path",
-                "param",
-                "secondaryHost",
-                "baseHost",
-                "domain",
-                "port",
-                "folder",
-                "fileName",
-                "extName",
-            ]:
-                if (
-                    UrlFullResolutionLazy._rawGet(self, name)
-                    == UrlFullResolutionLazy.Uncalculated
-                ):
-                    self._parseStepGlobally()
-                    if name in ["protocol", "host", "path", "param"]:
-                        return UrlFullResolutionLazy._rawGet(self, name)
-                    if name in ["secondaryHost", "baseHost", "domain", "port"]:
-                        self._parseStepHost()
-                        return UrlFullResolutionLazy._rawGet(self, name)
-                    if name in ["folder", "fileName", "extName"]:
-                        self._parseStepPath()
-                        return UrlFullResolutionLazy._rawGet(self, name)
-            return UrlFullResolutionLazy._rawGet(self, name)
-
-        @staticmethod
-        def _rawGet(self, name: str):
-            return object.__getattribute__(self, name)
-
-        class RegPool:
-            globally = regex.compile(
-                r"^(?<protcol>[A-Za-z]+://)?(?<host>[^/]+\.[^/.]+)?(?<path>[^?]*)?(?<param>\?.*)?$"
-            )
-            host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
-            path = regex.compile(
-                r"^(?<folder>.+?)(?:/(?<fileName>[^/]+(?<extName>\..*)))?$"
-            )
-
-        class UnexpectedException(Exception): ...
-
-        def _parseStepGlobally(self):
-            if (
-                UrlFullResolutionLazy._rawGet(self, "protocol")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "host")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "path")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "param")
-                == UrlFullResolutionLazy.Uncalculated
-            ):
-                protocol, host, path, param = [None] * 4
-                if UrlFullResolutionLazy._rawGet(self, "url") is not None:
-                    matchGlobally = UrlFullResolutionLazy.RegPool.globally.match(self.url)
-                    if matchGlobally is not None:
-                        protocol, host, path, param = matchGlobally.group(
-                            "protcol", "host", "path", "param"
-                        )
-                self.protocol = protocol
-                self.host = host
-                self.path = path
-                self.param = param
-
-        def _parseStepHost(self):
-            if (
-                UrlFullResolutionLazy._rawGet(self, "port")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "secondaryHost")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "baseHost")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "domain")
-                == UrlFullResolutionLazy.Uncalculated
-            ):
-                secondaryHost, baseHost, domain, port = [None] * 4
-                if UrlFullResolutionLazy._rawGet(self, "host") is not None:
-                    matchHost = UrlFullResolutionLazy.RegPool.host.match(self.host)
-                    if matchHost is not None:
-                        hostNoPort, port = matchHost.group("host", "port")
-                        lHost = hostNoPort.split(".")
-                        if len(lHost) < 2:
-                            raise UrlFullResolutionLazy.UnexpectedException()
-                        if not (
-                            len(lHost) == 4
-                            and all(str.isdigit(i) and 255 >= int(i) >= 0 for i in lHost)
-                        ):
-                            secondaryHost = ".".join(lHost[0:-2])
-                            baseHost = ".".join(lHost[-2:])
-                            domain = lHost[-1]
-                self.port = port
-                self.secondaryHost = secondaryHost
-                self.baseHost = baseHost
-                self.domain = domain
+                self._SetScope(UrlFullResolution._Scopes.port, port)
+                self._SetScope(UrlFullResolution._Scopes.secondaryHost, secondaryHost)
+                self._SetScope(UrlFullResolution._Scopes.baseHost, baseHost)
+                self._SetScope(UrlFullResolution._Scopes.domain, domain)
 
         def _parseStepPath(self):
-            if (
-                UrlFullResolutionLazy._rawGet(self, "folder")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "fileName")
-                == UrlFullResolutionLazy.Uncalculated
-                or UrlFullResolutionLazy._rawGet(self, "extName")
-                == UrlFullResolutionLazy.Uncalculated
+            if any(
+                [
+                    self._isUncalculatedScope(n)
+                    for n in [
+                        UrlFullResolution._Scopes.folder,
+                        UrlFullResolution._Scopes.fileName,
+                        UrlFullResolution._Scopes.extName,
+                    ]
+                ]
             ):
                 folder, fileName, extName = [None] * 3
-                if UrlFullResolutionLazy._rawGet(self, "path") is not None:
-                    matchPath = UrlFullResolutionLazy.RegPool.path.match(self.path)
+                if self.path is not None:
+                    matchPath = UrlFullResolution.RegPool.path.match(self.path)
                     if matchPath is not None:
                         folder, fileName, extName = matchPath.group(
                             "folder", "fileName", "extName"
                         )
-                self.folder = folder
-                self.fileName = fileName
-                self.extName = extName
+                self._SetScope(UrlFullResolution._Scopes.folder, folder)
+                self._SetScope(UrlFullResolution._Scopes.fileName, fileName)
+                self._SetScope(UrlFullResolution._Scopes.extName, extName)
 
         def calcAll(self):
             self._parseStepGlobally()
@@ -1587,9 +1498,10 @@ try:
 
         def __post_init__(self):
             self.url = PathNormalize(self.url)
-            if self.ensureAllCalculated:
-                self.calcAll()
-
+        
+        @staticmethod
+        def of(url:str):
+            return UrlFullResolution(url)
 
 except ImportError:
     pass
