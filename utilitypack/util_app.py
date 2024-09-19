@@ -69,7 +69,7 @@ class BulletinApp:
         )
         self.fpsm = FpsManager(fps)
 
-        self.threadpool:futures.ThreadPoolExecutor = threadpool
+        self.threadpool: futures.ThreadPoolExecutor = threadpool
 
         self.hud: fullScrHUD = fullScrHUD()
 
@@ -113,12 +113,15 @@ class BulletinApp:
         self.business.append(TaskScheduleing(task=foo, period=period))
         return foo
 
-    @EasyWrapper
-    def Hotkey(foo, self: "BulletinApp", name, key, continiousPress=None):
+    def HotkeyFullFunction(self: "BulletinApp", name, key, *args, **kwargs):
         print(f"{name:<20}{HotkeyManager.hotkeytask.getKeyRepr(key)}")
-        self.hotkeytask.append(
-            HotkeyManager.hotkeytask(key=key, onKeyPress=foo)
-        )
+        hkt = HotkeyManager.hotkeytask(key=key, *args, **kwargs)
+        self.hotkeytask.append(hkt)
+        return Coalesce(hkt.onKeyDown, hkt.onKeyPress, hkt.onKeyUp)
+
+    @EasyWrapper
+    def Hotkey(foo, self: "BulletinApp", name, key):
+        self.HotkeyFullFunction(name, key, onKeyDown=foo)
         return foo
 
     def go(self):

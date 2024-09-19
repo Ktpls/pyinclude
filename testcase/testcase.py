@@ -15,6 +15,7 @@ def HotkeyManagerDemo():
                     win32conComp.KeyOf("C"),
                 ],
                 lambda: print("Ctrl+Alt+C"),
+                onKeyPress=lambda: print("Ctrl+Alt+C press"),
             ),
             HotkeyManager.hotkeytask(
                 [win32conComp.VK_CONTROL, win32conComp.KeyOf("C")],

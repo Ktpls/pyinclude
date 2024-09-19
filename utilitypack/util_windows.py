@@ -338,6 +338,7 @@ def isKBDownNow(k):
     return win32api.GetAsyncKeyState(k) and 0x8000
 
 
+@Singleton
 class TranslateHotKey:
     dct = {
         win32con.VK_CONTROL: "Ctrl",

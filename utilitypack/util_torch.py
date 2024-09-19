@@ -462,3 +462,59 @@ def setModuleFree(backbone: torch.nn.Module, freeLayers):
         else:
             param.requires_grad = False
     return backbone
+
+
+def getmodel(model0: torch.nn.Module, *arg, **kwarg):
+    model = setModule(model0, *arg, **kwarg)
+    paramNum = np.sum(
+        [p.numel() for n, p in model.named_parameters() if p.requires_grad]
+    )
+    print(f"{paramNum=}")
+    # print(model)
+    return model
+
+
+class FinalModule(torch.nn.Module):
+    def parameters(
+        self, recurse: bool = True
+    ) -> typing.Iterator[torch.nn.parameter.Parameter]:
+        return filter(
+            lambda x: x.requires_grad is not False, super().parameters(recurse)
+        )
+
+    def calcloss(self, *arg, **kw): ...
+
+    def trainprogress(self, datatuple): ...
+
+    def inferenceProgress(self, datatuple): ...
+
+    def load(self, path):
+        getmodel(self, path)
+        return self
+
+    def save(self, path):
+        savemodel(self, path)
+
+
+class MPn(torch.nn.Module):
+    def __init__(self, in_channels, n_value=1, downSamplingStride=2):
+        super().__init__()
+        self.in_channels = in_channels
+        assert in_channels % 2 == 0
+        out_channels = n_value * in_channels
+        self.out_channels = out_channels
+        cPath = out_channels // 2
+        self.wayPooling = torch.nn.Sequential(
+            torch.nn.MaxPool2d(downSamplingStride, downSamplingStride),
+            ConvGnHs(in_channels, cPath),
+        )
+        self.wayConv = torch.nn.Sequential(
+            ConvGnHs(in_channels, cPath, kernel_size=1),
+            ConvGnHs(cPath, cPath, stride=downSamplingStride, padding=1),
+        )
+        self.combiner = ConvGnHs(cPath * 2, out_channels)
+
+    def forward(self, x):
+        o_pool = self.wayPooling(x)
+        o_conv = self.wayConv(x)
+        return self.combiner(torch.concat([o_pool, o_conv], dim=1))
