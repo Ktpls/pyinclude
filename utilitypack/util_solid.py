@@ -568,6 +568,7 @@ class PIDController:
     analizerMode: bool = False
     last_error: float = dataclasses.field(default=0, init=False)
     integral: float = dataclasses.field(default=0, init=False)
+    frameData: AnalizerFrameData = dataclasses.field(default=None, init=False)
 
     def update(self, error, dt=1):
         self.integral += error * dt
@@ -579,7 +580,7 @@ class PIDController:
         output = self.kp * error + self.ki * self.integral + self.kd * derivative
         self.last_error = error
         if self.analizerMode:
-            return output, self.AnalizerFrameData(
+            self.frameData = PIDController.AnalizerFrameData(
                 partp=self.kp * error,
                 parti=self.ki * self.integral,
                 partd=self.kd * derivative,
@@ -587,8 +588,7 @@ class PIDController:
                 integral=self.integral,
                 derivative=derivative,
             )
-        else:
-            return output
+        return output
 
 
 class OneOrderLinearFilter:
@@ -1204,6 +1204,26 @@ def RunThis(f):
     f()
 
 
+class MaxRetry:
+    def __init__(self, succCond: typing.Callable[[], bool], maxRetry: int = 3):
+        self.succCond = succCond
+        self.maxRetry = maxRetry
+        self.i = 0
+        self.isSuccessed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.i >= self.maxRetry:
+            raise StopIteration
+        if self.succCond():
+            self.isSuccessed=True
+            raise StopIteration
+        self.i += 1
+        return self.i
+
+
 ################################################
 ################# not so solid #################
 ################################################
@@ -1498,9 +1518,9 @@ try:
 
         def __post_init__(self):
             self.url = PathNormalize(self.url)
-        
+
         @staticmethod
-        def of(url:str):
+        def of(url: str):
             return UrlFullResolution(url)
 
 except ImportError:

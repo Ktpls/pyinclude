@@ -340,6 +340,16 @@ class trainpipe:
 
         # win32api.Beep(1000, 1000)
         print("Done!")
+    
+    def prepare(self):...
+
+    def calcloss(self, *arg, **kw): ...
+
+    def trainprogress(self, datatuple): ...
+
+    def inferenceProgress(self, datatuple): ...
+    
+    def demo(self, *arg, **kw):...
 
 
 class ConvNormInsp(torch.nn.Module):
@@ -481,12 +491,6 @@ class FinalModule(torch.nn.Module):
         return filter(
             lambda x: x.requires_grad is not False, super().parameters(recurse)
         )
-
-    def calcloss(self, *arg, **kw): ...
-
-    def trainprogress(self, datatuple): ...
-
-    def inferenceProgress(self, datatuple): ...
 
     def load(self, path):
         getmodel(self, path)
