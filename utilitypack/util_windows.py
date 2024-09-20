@@ -457,7 +457,7 @@ class HotkeyManager:
         self.__calcPriorInfo()
 
         # clear all previous state
-        [k.GetKeyDown() for k in self.kc]
+        self._getKeyConcernedState()
 
     def __calcPriorInfo(self):
         """
@@ -528,7 +528,7 @@ class HotkeyManager:
         ]
 
     def dispatchMessage(self, throwonerr=False, printonerr=False):
-        keystate = {k.code: k.GetKeyDown() for k in self.kc}
+        keystate = self._getKeyConcernedState()
         curHotkeyState = self.keyState2HotkeyState(keystate)
         for i, s in enumerate(curHotkeyState):
             try:
@@ -541,6 +541,9 @@ class HotkeyManager:
                     traceback.print_exc()
                 if throwonerr:
                     raise e
+
+    def _getKeyConcernedState(self):
+        return {k.code: k.GetKeyDown() for k in self.kc}
 
     @dataclasses.dataclass
     class InputSession:
