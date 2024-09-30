@@ -102,10 +102,10 @@ def FunctionalWrapper(f: typing.Callable) -> typing.Callable:
     return f2
 
 
-def EasyWrapper(wrappedLogic=None):
+def EasyWrapper(wrapperLogic=None):
     """
     use like this
-        @WrapperAsMyTaste()
+        @EasyWrapper()
         def yourWrapper(f, some_arg_your_wrapper_needs):
             ...
         @yourWrapper(some_arg_your_wrapper_needs)
@@ -116,12 +116,6 @@ def EasyWrapper(wrappedLogic=None):
         def foo(func_arg):
             ...
     note that this is forbiden:
-        @yourWrapper(some_callable)
-        def foo(func_arg): ...
-            cuz wrapper is confused with if its processing the wrapped function or callable in arg
-            use this instead if wrapper needs another callable more than the one you are wrapping
-                @yourWrapper(keyword=some_callable)
-                def foo(func_arg): ...
         @someClassInstance.methodDecorator
         def foo(...): ...
             cuz wrapper will recieve the instance as the first arg, and the foo as the second
@@ -137,29 +131,35 @@ def EasyWrapper(wrappedLogic=None):
     known issue
 
     """
-
-    def toGetWrapperLogic(wrappedLogic):
+    def toGetWrapperLogic(wrapperLogic):
         def newWrapper(*arg, **kw):
-            def toGetFLogic(fLogic):
-                return wrappedLogic(fLogic, *arg, **kw)
+            def toGetFLogic(funcLogic):
+                return wrapperLogic(funcLogic, *arg, **kw)
 
             if (
                 len(arg) == 1
-                and (inspect.isfunction(arg[0]) or inspect.isclass(arg[0]))
                 and len(kw) == 0
+                and (inspect.isfunction(arg[0]) or inspect.isclass(arg[0]))
+                and [
+                    1
+                    for k, v in inspect.signature(wrapperLogic).parameters.items()
+                    if v.default == inspect.Parameter.empty
+                ].__len__()
+                == 1
             ):
-                # calling without parens
-                return wrappedLogic(arg[0])
+                # to find if its possible to call without parens
+                return wrapperLogic(arg[0])
             else:
+                # calling without parens
                 return toGetFLogic
 
         return newWrapper
 
-    if wrappedLogic is None:
+    if wrapperLogic is not None:
+        return toGetWrapperLogic(wrapperLogic)
+    else:
         # calling without parens
         return toGetWrapperLogic
-    else:
-        return toGetWrapperLogic(wrappedLogic)
 
 
 class BulletinBoard:
@@ -258,8 +258,9 @@ class StoppableSomewhat:
         """
         if implType is None:
             implType = StoppableThread
-        if not issubclass(implType, StoppableSomewhat):
-            raise NotImplementedError("doesn't work")
+        # if not issubclass(implType, StoppableSomewhat):
+        # sometimes not subclass even implType is passed with StoppableThread
+        #     raise NotImplementedError("doesn't work")
         # if implType == StoppableProcess:
         #     raise NotImplementedError("doesn't work")
 
