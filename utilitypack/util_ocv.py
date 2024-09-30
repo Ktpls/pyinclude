@@ -476,8 +476,24 @@ class AffineMats:
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
         dtype=AffineMats.dtype,
     )
-    fromVec2d = lambda v: np.concatenate([v, [1.0]])
-    toVec2d = lambda v: v[:2]
+
+    def fromVec2d(v: np.ndarray):
+        if len(v.shape) == 1:
+            return np.concatenate([v, [1.0]])
+        else:
+            assert len(v.shape) == 2
+            return np.concatenate([v, np.ones(v.shape[:-1] + (1,))], axis=-1)
+
+    def toVec2d(v: np.ndarray):
+        if len(v.shape) == 1:
+            return v[:2]
+        else:
+            assert len(v.shape) == 2
+            slce = [
+                slice(None, None) if i != 0 else slice(None, 2)
+                for i in range(len(v.shape))
+            ]
+            return v[*slce]
 
 
 class MtiFilter:

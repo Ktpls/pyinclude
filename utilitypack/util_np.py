@@ -159,3 +159,6 @@ def NpGeneratorFromStrSeed(s: str):
     seed = hashlib.md5(seed).digest()
     seed = int.from_bytes(seed[:8])
     return np.random.Generator(np.random.PCG64(seed))
+
+def SpatialVectorWithShapeLikeX(x:np.ndarray, axis:int):
+    return [1 if i != axis else -1 for i in range(len(x.shape))]

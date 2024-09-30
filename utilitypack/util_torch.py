@@ -340,16 +340,16 @@ class trainpipe:
 
         # win32api.Beep(1000, 1000)
         print("Done!")
-    
-    def prepare(self):...
+
+    def prepare(self): ...
 
     def calcloss(self, *arg, **kw): ...
 
     def trainprogress(self, datatuple): ...
 
     def inferenceProgress(self, datatuple): ...
-    
-    def demo(self, *arg, **kw):...
+
+    def demo(self, *arg, **kw): ...
 
 
 class ConvNormInsp(torch.nn.Module):
@@ -514,7 +514,13 @@ class MPn(torch.nn.Module):
         )
         self.wayConv = torch.nn.Sequential(
             ConvGnHs(in_channels, cPath, kernel_size=1),
-            ConvGnHs(cPath, cPath, stride=downSamplingStride, padding=1),
+            ConvGnHs(
+                cPath,
+                cPath,
+                stride=downSamplingStride,
+                padding=1,
+                kernel_size=downSamplingStride + 1,
+            ),
         )
         self.combiner = ConvGnHs(cPath * 2, out_channels)
 

@@ -1045,6 +1045,10 @@ class AnnotationUtil:
         return AnnotationUtil.getAnnotationDict(obj).get(key, None)
 
     @staticmethod
+    def isAnnotationPresentd(obj, key):
+        return key in AnnotationUtil.getAnnotationDict(obj)
+
+    @staticmethod
     @EasyWrapper
     def AnnotationClass(cls):
         def newCall(self, foo):
@@ -1200,8 +1204,9 @@ def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
 
 
 @EasyWrapper
-def RunThis(f):
+def RunThis(f: typing.Callable[[], typing.Any]):
     f()
+    return f
 
 
 class MaxRetry:
@@ -1218,10 +1223,47 @@ class MaxRetry:
         if self.i >= self.maxRetry:
             raise StopIteration
         if self.succCond():
-            self.isSuccessed=True
+            self.isSuccessed = True
             raise StopIteration
         self.i += 1
         return self.i
+
+@EasyWrapper
+def StaticCall(cls):
+    cls.__new__ = lambda cls, *a, **kw: getattr(cls, "__call__")(*a, **kw)
+    return cls
+
+
+@EasyWrapper
+def ComparatorOverloaded(cls, Pred):
+    cls.__lt__ = lambda a, b: Pred(a) < Pred(b)
+    cls.__le__ = lambda a, b: Pred(a) <= Pred(b)
+    cls.__gt__ = lambda a, b: Pred(a) > Pred(b)
+    cls.__ge__ = lambda a, b: Pred(a) >= Pred(b)
+    cls.__eq__ = lambda a, b: Pred(a) == Pred(b)
+    cls.__ne__ = lambda a, b: Pred(a) != Pred(b)
+    return cls
+
+
+def BiptrFindSection(x, section):
+    """
+    assumes sections are sorted
+    returns 0 if x<=section[0]
+    returns len(section) if x>=section[-1]
+    """
+    beg = 0
+    end = len(section)
+    mid = beg
+    while beg < end:
+        mid = (beg + end) // 2
+        if x < section[mid]:
+            end = mid
+        elif x > section[mid]:
+            beg = mid + 1
+        else:  # x==section[mid]
+            break
+    mid = (beg + end) // 2
+    return mid
 
 
 ################################################

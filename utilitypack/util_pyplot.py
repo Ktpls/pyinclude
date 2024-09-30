@@ -1,7 +1,7 @@
 from .util_np import *
 
 import matplotlib.pyplot as plt
-
+plt.style.use("dark_background")
 
 def NewPyPlotAxis():
     fig, ax = plt.subplots()
