@@ -20,6 +20,7 @@ import typing
 import uuid
 import json
 import zipfile
+import heapq
 
 """
 solid
@@ -125,15 +126,16 @@ def EasyWrapper(wrapperLogic=None):
                 def foo(func_arg): .
     somehow buggy but works almost fine
     ###############
-    note that python design is piece of shlt
+    note that python design is piece of shit
     ###############
 
-    known issue
+    known issue:
 
     """
+
     def toGetWrapperLogic(wrapperLogic):
         def newWrapper(*arg, **kw):
-            def toGetFLogic(funcLogic):
+            def toGetFuncLogic(funcLogic):
                 return wrapperLogic(funcLogic, *arg, **kw)
 
             if (
@@ -151,7 +153,7 @@ def EasyWrapper(wrapperLogic=None):
                 return wrapperLogic(arg[0])
             else:
                 # calling without parens
-                return toGetFLogic
+                return toGetFuncLogic
 
         return newWrapper
 
@@ -1229,6 +1231,7 @@ class MaxRetry:
         self.i += 1
         return self.i
 
+
 @EasyWrapper
 def StaticCall(cls):
     cls.__new__ = lambda cls, *a, **kw: getattr(cls, "__call__")(*a, **kw)
@@ -1236,7 +1239,7 @@ def StaticCall(cls):
 
 
 @EasyWrapper
-def ComparatorOverloaded(cls, Pred):
+def ComparatorOverloadedByPred(cls, Pred):
     cls.__lt__ = lambda a, b: Pred(a) < Pred(b)
     cls.__le__ = lambda a, b: Pred(a) <= Pred(b)
     cls.__gt__ = lambda a, b: Pred(a) > Pred(b)
@@ -1249,11 +1252,17 @@ def ComparatorOverloaded(cls, Pred):
 def BiptrFindSection(x, section):
     """
     assumes sections are sorted
-    returns 0 if x<=section[0]
-    returns len(section) if x>=section[-1]
+    returns index i so that section[i]<=x<section[i+1]
+    if x<section[0] or x>=section[-1], returns -1 or len(section)-1
     """
     beg = 0
     end = len(section)
+    if beg == end:
+        raise ValueError("empty section")
+    if x < section[0]:
+        return -1
+    if x >= section[-1]:
+        return len(section) - 1
     mid = beg
     while beg < end:
         mid = (beg + end) // 2
@@ -1265,6 +1274,36 @@ def BiptrFindSection(x, section):
             break
     mid = (beg + end) // 2
     return mid
+
+
+class TaskScheduler:
+    @ComparatorOverloadedByPred(lambda a: a.time)
+    @dataclasses.dataclass
+    class Task:
+        time: float
+        action: typing.Callable
+
+    tasks: list["TaskScheduler.Task"]
+
+    def __init__(self, initialTasks=None) -> None:
+        self.tasks = Coalesce(initialTasks, list())
+
+    def add(self, action: Task):
+        heapq.heappush(self.tasks, action)
+
+    def addAll(self, actions: list[Task]):
+        for a in actions:
+            self.add(a)
+
+    def clear(self):
+        self.tasks = list()
+
+    def uptate(self, t: float):
+        if self.tasks.__len__() != 0:
+            task = self.tasks[0]
+            if task.time <= t:
+                heapq.heappop(self.tasks)
+                task.action()
 
 
 ################################################

@@ -5,7 +5,6 @@ from utilitypack.cold.util_solid import *
 from utilitypack.util_windows import *
 from utilitypack.util_winkey import *
 
-
 def HotkeyManagerDemo():
     hkm = HotkeyManager(
         [

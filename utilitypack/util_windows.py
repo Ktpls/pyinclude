@@ -688,24 +688,22 @@ def NormalizeCrlf(s: str):
 @dataclasses.dataclass
 class Rhythm:
     @dataclasses.dataclass
-    class BeepTone:
-        freq: int
-        dur: int = 100
+    class Tone:
+        freq: int = None
+        dur: int = None
 
-    tones: list["Rhythm.BeepTone"]
+    tones: list["Rhythm.Tone"]
 
     @staticmethod
-    def fromString(s: str, default_dur: int = 100):
-        lines = regex.split(r"\s+", NormalizeCrlf(s))
-        tones = []
-        for l in lines:
-            arg = l.split(",")
-            tones.append(
-                Rhythm.BeepTone(
-                    int(arg[0]), dur=int(arg[1]) if len(arg) > 1 else default_dur
-                )
-            )
-        return Rhythm(tones)
+    def ofRel(s: list["Rhythm.Tone"], baseTone: int = 500, baseDur: int = 100):
+        for t in s:
+            if t.freq is None:
+                t.freq = 1
+            if t.dur is None:
+                t.dur = 1
+            t.freq = int(t.freq * baseTone + 0.5)
+            t.dur = int(t.dur * baseDur + 0.5)
+        return Rhythm(s)
 
     def play(self):
         for t in self.tones:
@@ -720,13 +718,58 @@ class Rhythm:
 
 
 class Rhythms:
-    Success = Rhythm.fromString("1000 500 1000", default_dur=100)
-    Error = Rhythm.fromString("1000,1000 500,1000", default_dur=100)
-    Cancel = Rhythm.fromString("1000 500 500", default_dur=100)
-    Notify = Rhythm.fromString("500", default_dur=100)
-    GoodNotify = Rhythm.fromString("1000", default_dur=100)
-    BadNotify = Rhythm.fromString("500 500 500", default_dur=100)
-    Reboot = Rhythm.fromString("500 750 400", default_dur=100)
+    Success = Rhythm.ofRel(
+        [
+            Rhythm.Tone(),
+            Rhythm.Tone(0.5),
+            Rhythm.Tone(),
+        ],
+        baseTone=1000,
+        baseDur=100,
+    )
+    Error = Rhythm.ofRel(
+        [
+            Rhythm.Tone(),
+            Rhythm.Tone(0.5),
+        ],
+        baseTone=1000,
+        baseDur=1000,
+    )
+    Cancel = Rhythm.ofRel(
+        [
+            Rhythm.Tone(),
+            Rhythm.Tone(0.5),
+            Rhythm.Tone(0.5),
+        ],
+        baseTone=1000,
+        baseDur=100,
+    )
+    Notify = Rhythm.ofRel([Rhythm.Tone()], baseTone=500, baseDur=100)
+    GoodNotify = Rhythm.ofRel(
+        [
+            Rhythm.Tone(0.5,0.5),
+            Rhythm.Tone(),
+        ],
+        baseTone=1100,
+        baseDur=500,
+    )
+    BadNotify = Rhythm.ofRel(
+        [
+            Rhythm.Tone(dur=0.5),
+            Rhythm.Tone(0.7),
+        ],
+        baseTone=1000,
+        baseDur=500,
+    )
+    Reboot = Rhythm.ofRel(
+        [
+            Rhythm.Tone(),
+            Rhythm.Tone(1.5),
+            Rhythm.Tone(0.8),
+        ],
+        baseTone=500,
+        baseDur=100,
+    )
 
 
 class WifiRefresher:
