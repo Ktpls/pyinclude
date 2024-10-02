@@ -442,8 +442,37 @@ def SleepUntil(con: typing.Callable, dt=None, sleepImpl=None):
         sleepImpl(dt)
 
 
+class SingleSectionedTimer:
+    """
+    basic timer, allows only start and stop with one section
+    """
+
+    def timeCounter(self):
+        return time.perf_counter()
+
+    def clear(self):
+        self._starttime = None
+        return self
+
+    def start(self):
+        self._starttime = (self.timeCounter)()
+        return self
+
+    def isRunning(self):
+        return self._starttime is not None
+
+    def get(self) -> float:
+        return (self.timeCounter)() - self._starttime if self.isRunning() else 0
+
+    def __init__(self, startNow=False):
+        self.clear()
+        if startNow:
+            self.start()
+
+
 class perf_statistic:
     """
+    providing rich timer functions, like multicycle counting, performance profiling
     calculate the time past between start() to now, directly by perf_counter()-starttime
     record all accumulated time before start(), but uncleared after stop()
     so start and stop are also playing roles as resume and pause
@@ -452,19 +481,20 @@ class perf_statistic:
     """
 
     def __init__(self, startnow=False):
+        self._singled = SingleSectionedTimer()
         self.clear()
         if startnow:
             self.start()
 
     def clear(self):
-        self._starttime = None
+        self._singled.clear()
         self._stagedTime = 0
         self._cycle = 0
         self._stagedTimeList = list()
         return self
 
     def start(self):
-        self._starttime = time.perf_counter()
+        self._singled.start()
         return self
 
     def countcycle(self):
@@ -472,25 +502,21 @@ class perf_statistic:
         return self
 
     def stop(self):
-        if not self.isRunning():
-            return self
-        timeThisRound = self._timeCurrentlyCounting()
-        self._stagedTime += timeThisRound
-        self._stagedTimeList.append(timeThisRound)
-        self._starttime = None
+        if self.isRunning():
+            timeThisRound = self._singled.get()
+            self._singled.clear()
+            self._stagedTime += timeThisRound
+            self._stagedTimeList.append(timeThisRound)
         return self
 
     def isRunning(self):
-        return self._starttime is not None
+        return self._singled.isRunning()
 
     def time(self):
-        return self._stagedTime + self._timeCurrentlyCounting()
+        return self._stagedTime + self._singled.get()
 
     def aveTime(self):
         return self.time() / (self._cycle if self._cycle > 0 else 1)
-
-    def _timeCurrentlyCounting(self):
-        return time.perf_counter() - self._starttime if self.isRunning() else 0
 
     @dataclasses.dataclass
     class SectionCounter:
