@@ -20,7 +20,7 @@ def ExpParserBenchMark():
     ps.stop()
     pg.setFinish()
     print(ps.time() / turnNum)
-
+@RunThis
 def Port8111BenchMark():
     turnNum = 1000
     pg = Progress(turnNum)

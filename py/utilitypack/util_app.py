@@ -5,7 +5,7 @@ import traceback
 @dataclasses.dataclass
 class TaskScheduleing:
     task: typing.Callable
-    period: float
+    period: float = None
     lasttime: float = None
 
     class State(enum.Enum):
@@ -24,7 +24,11 @@ class TaskScheduleing:
     def check(self, nowtime):
         if self.state != TaskScheduleing.State.RUNNING:
             return
-        if self.lasttime is not None and nowtime - self.lasttime < self.period:
+        if (
+            self.period is not None
+            and self.lasttime is not None
+            and nowtime - self.lasttime < self.period
+        ):
             return
         self.lasttime = nowtime
         self.task()
@@ -109,7 +113,6 @@ class BulletinApp:
 
     @EasyWrapper
     def Business(foo, self: "BulletinApp", period=None):
-        period = period or 0.1
         self.business.append(TaskScheduleing(task=foo, period=period))
         return foo
 

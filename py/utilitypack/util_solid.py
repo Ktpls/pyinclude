@@ -445,6 +445,7 @@ def SleepUntil(con: typing.Callable, dt=None, sleepImpl=None):
 class SingleSectionedTimer:
     """
     basic timer, allows only start and stop with one section
+    one could simply use start() as restart function without clear() and start()
     """
 
     def timeCounter(self):
@@ -851,25 +852,25 @@ class BeanUtil:
     """
 
     @staticmethod
-    def __GetFields(clz):
+    def _GetClassFields(clz):
         parents = NormalizeIterableOrSingleArgToIterable(clz.__base__)
         result = dict()
         for p in parents:
             if p == object:
                 continue
-            result.update(BeanUtil.__GetFields(p))
+            result.update(BeanUtil._GetClassFields(p))
         if hasattr(clz, "__annotations__"):
             # override
             result.update(clz.__annotations__)
         return result
 
     @staticmethod
-    def GetEmptyInstance(cls):
+    def _GetEmptyInstanceOfClass(cls):
         args = inspect.getargs(cls.__init__.__code__)
         if len(args) > 1:
             # found init with arg more than self
             inst = object.__new__(cls)
-            fields = BeanUtil.__GetFields(cls)
+            fields = BeanUtil._GetClassFields(cls)
             for name, taipe in fields.items():
                 """
                 for taipe as class, its possible to recursively call GetEmptyInstance
@@ -881,7 +882,7 @@ class BeanUtil:
             return cls()
 
     @staticmethod
-    def __FieldConversionFunc(obj, field):
+    def _FieldConversionFunc(obj, field):
         taipe = obj.__annotations__.get(field, None)
         if taipe is None or isinstance(taipe, str):
             # not type annotated, or annotated like field:"some class"
@@ -892,18 +893,17 @@ class BeanUtil:
         return taipe
 
     @staticmethod
-    def __GetterOf(obj):
+    def _GetterOf(obj):
         if isinstance(obj, dict):
             return lambda: obj.items()
         return lambda: obj.__dict__.items()
 
     @staticmethod
-    def __SetterOf(obj):
+    def _SetterOf(obj):
         if isinstance(obj, dict):
 
             def DictSetter(obj, k, v):
-                if k in obj:
-                    obj[k] = v
+                obj[k] = v
 
             return DictSetter
 
@@ -911,7 +911,7 @@ class BeanUtil:
             if k in obj.__dict__:
                 try:
                     # try convert it to proper type
-                    v = BeanUtil.__FieldConversionFunc(obj, k)(v)
+                    v = BeanUtil._FieldConversionFunc(obj, k)(v)
                 except:
                     pass
                 obj.__setattr__(k, v)
@@ -919,28 +919,24 @@ class BeanUtil:
         return ObjSetter
 
     @staticmethod
-    def __DictOrObj2DictOrObjCopy(src: object, dst: object, option: "BeanUtil.Option"):
-        Getter = BeanUtil.__GetterOf(src)
-        Setter = BeanUtil.__SetterOf(dst)
+    def _DictOrObj2DictOrObjCopy(src: object, dst: object, option: "BeanUtil.Option"):
+        Getter = BeanUtil._GetterOf(src)
+        Setter = BeanUtil._SetterOf(dst)
         for k, v in Getter():
             if option.ignoreNoneInSrc and v is None:
                 continue
             Setter(dst, k, v)
-
-    @staticmethod
-    def __DictOrObj2ClassCopy(
-        src: object, dst: typing.Callable, option: "BeanUtil.Option"
-    ):
-        dstobj = BeanUtil.GetEmptyInstance(dst)
-        BeanUtil.__DictOrObj2DictOrObjCopy(src, dstobj, option)
-        return dstobj
+        return dst
 
     @staticmethod
     def copyProperties(src, dst: object, option: "BeanUtil.Option" = Option()):
         if inspect.isclass(dst):
-            return BeanUtil.__DictOrObj2ClassCopy(src, dst, option)
-        else:
-            BeanUtil.__DictOrObj2DictOrObjCopy(src, dst, option)
+            dst = BeanUtil._GetEmptyInstanceOfClass(dst)
+        return BeanUtil._DictOrObj2DictOrObjCopy(src, dst, option)
+    
+    @staticmethod
+    def toMap(src, option: "BeanUtil.Option" = Option()):
+        return BeanUtil._DictOrObj2DictOrObjCopy(src, dict(), option)
 
 
 class Container:
