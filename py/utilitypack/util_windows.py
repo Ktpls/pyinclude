@@ -527,20 +527,13 @@ class HotkeyManager:
             for hkidx, hk in enumerate(self.hktl)
         ]
 
-    def dispatchMessage(self, throwonerr=False, printonerr=False):
+    def dispatchMessage(self):
         keystate = self._getKeyConcernedState()
         curHotkeyState = self.keyState2HotkeyState(keystate)
         for i, s in enumerate(curHotkeyState):
-            try:
-                self.hktl[i]._switch.setTo(s)
-                if s:
-                    if self.hktl[i].onKeyPress:
-                        self.hktl[i].onKeyPress()
-            except Exception as e:
-                if printonerr:
-                    traceback.print_exc()
-                if throwonerr:
-                    raise e
+            self.hktl[i]._switch.setTo(s)
+            if s and self.hktl[i].onKeyPress:
+                self.hktl[i].onKeyPress()
 
     def _getKeyConcernedState(self):
         return {k.code: k.GetKeyDown() for k in self.kc}
@@ -747,7 +740,7 @@ class Rhythms:
     Notify = Rhythm.ofRel([Rhythm.Tone()], baseTone=500, baseDur=100)
     GoodNotify = Rhythm.ofRel(
         [
-            Rhythm.Tone(0.5,0.5),
+            Rhythm.Tone(0.5, 0.5),
             Rhythm.Tone(),
         ],
         baseTone=1100,

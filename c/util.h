@@ -40,7 +40,7 @@ public:
     }
     static auto range(eT beg, eT end) { return pipe::range(beg, end, 1); }
     static auto range(eT end) { return pipe::range(0, end); }
-    pipe &foreach (std::function<void(const eT &)> consumer)
+    pipe &foreach (std::function<void(eT &)> consumer)
     {
         std::for_each(c.begin(), c.end(), consumer);
         return *this;
