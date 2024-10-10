@@ -150,7 +150,7 @@ class BulletinApp:
         while True:
             self.fpsm.WaitUntilNextFrame()
             try:
-                self.hkm.dispatchMessage(True, True)
+                self.hkm.dispatchMessage()
             except SystemExit as e:
                 raise e
             except Exception as e:

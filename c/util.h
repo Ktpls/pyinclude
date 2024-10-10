@@ -19,7 +19,7 @@ public:
     static auto of(const std::map<kT, vT>& c_) {
         auto c = std::vector<std::pair<kT, vT>>();
         c.reserve(c_.size());
-        for (auto p : c_)
+        for (auto& p : c_)
             c.push_back(p);
         return pipe<std::pair<kT, vT>>(c);
     }
