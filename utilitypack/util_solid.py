@@ -933,7 +933,7 @@ class BeanUtil:
         if inspect.isclass(dst):
             dst = BeanUtil._GetEmptyInstanceOfClass(dst)
         return BeanUtil._DictOrObj2DictOrObjCopy(src, dst, option)
-    
+
     @staticmethod
     def toMap(src, option: "BeanUtil.Option" = Option()):
         return BeanUtil._DictOrObj2DictOrObjCopy(src, dict(), option)
@@ -1328,6 +1328,18 @@ class TaskScheduler:
                 task.action()
 
 
+@dataclasses.dataclass
+class Section:
+    start: int = None
+    end: int = None
+
+    def __len__(self):
+        return self.end - self.start
+
+    def cut(self, container):
+        return container[self.start : self.end]
+
+
 ################################################
 ################# not so solid #################
 ################################################
@@ -1388,16 +1400,26 @@ try:
                     s[self.end : lineEnd],
                 )
 
+        @dataclasses.dataclass
+        class GetTokenParam:
+            # for rich function support of getToken()
+            # unused for now
+            s: str
+            matcher: list["FSMUtil.TokenMatcher"]
+            redirectedToTokenWhenUnparsable: "FSMUtil.TokenTypeLike" = None
+
         @staticmethod
         def getToken(
-            s: str, i: int, matchers: list["FSMUtil.TokenMatcher"]
+            s: str,
+            i: int,
+            matchers: list["FSMUtil.TokenMatcher"],
         ) -> "FSMUtil.Token":
             for m in matchers:
                 token = m.tryMatch(s, i)
                 if token is not None:
                     return token
             sectionEnd = min(i + 10, len(s))
-            raise FSMUtil.ParseError(f"unparseable token at {i}: {s[i:sectionEnd]}")
+            raise FSMUtil.ParseError(f"unparsable token at {i}: {s[i:sectionEnd]}")
 
         @staticmethod
         def getAllToken(
@@ -1417,11 +1439,47 @@ try:
             return tokenList
 
         class PeekableLazyTokenizer:
+            class Iterator:
+                pltk: "FSMUtil.PeekableLazyTokenizer"
+                pos: int
+
+                def __init__(
+                    self,
+                    parent: "FSMUtil.PeekableLazyTokenizer | FSMUtil.PeekableLazyTokenizer.Iterator" = None,
+                ):
+                    self._init(parent)
+
+                def _init(
+                    self,
+                    parent: "FSMUtil.PeekableLazyTokenizer | FSMUtil.PeekableLazyTokenizer.Iterator" = None,
+                ):
+                    if parent is None:
+                        self.pltk = None
+                        self.pos = None
+                    elif isinstance(parent, FSMUtil.PeekableLazyTokenizer.Iterator):
+                        self.pltk = parent.pltk
+                        self.pos = parent.pos
+                    elif isinstance(parent, FSMUtil.PeekableLazyTokenizer):
+                        self._init(parent._it)
+
+                def next(self):
+                    ret = self.pltk.getByTokenAbsIndex(self.pos)
+                    self.movNext()
+                    return ret
+
+                def movNext(self):
+                    self.pos += 1
+
+                def movPrev(self):
+                    self.pos -= 1
+
+            Peeker = Iterator
+
             s: str
             matchers: list["FSMUtil.TokenMatcher"]
-            _tokenList: list["FSMUtil.Token"] = list()
-            _indexTextTokenizing = 0
-            _indexTokenListCurr = -1
+            _tokenList: list["FSMUtil.Token"]
+            _indexTextTokenizing: int
+            _it: Iterator
 
             def __init__(
                 self,
@@ -1431,7 +1489,11 @@ try:
             ):
                 self.s = s
                 self.matchers = matchers
+                self._tokenList = list()
                 self._indexTextTokenizing = start
+                self._it = self.Iterator(None)
+                self._it.pltk = self
+                self._it.pos = 0
 
             def _tokenizeNext(self):
                 token = FSMUtil.getToken(
@@ -1440,21 +1502,17 @@ try:
                 self._indexTextTokenizing = token.end
                 self._tokenList.append(token)
 
-            def getByTokenIndex(self, index):
+            def getByTokenAbsIndex(self, index):
                 while True:
                     if index < len(self._tokenList):
                         return self._tokenList[index]
                     self._tokenizeNext()
 
-            def curr(self):
-                return self.peek(0)
-
-            def peek(self, distance=1):
-                return self.getByTokenIndex(self._indexTokenListCurr + distance)
-
             def next(self):
-                self._indexTokenListCurr += 1
-                return self.curr()
+                return self._it.next()
+
+            def movPrev(self):
+                return self._it.movPrev()
 
     @dataclasses.dataclass
     class UrlFullResolution:
