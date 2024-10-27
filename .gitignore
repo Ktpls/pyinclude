@@ -1,4 +1,5 @@
 py/__pycache__
-py/utilitypack/__pycache__
-py/utilitypack/cold/__pycache__
-c/utilitypack/target
+py/*/__pycache__
+py/*/*/__pycache__
+c/*/target
+c/*/*/target
