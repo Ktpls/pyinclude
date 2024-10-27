@@ -80,7 +80,9 @@ def setModule(model, path=None, device=None):
         print(f"Warning: Path {path} not exist. Set model default")
     else:
         print(f"Loading existed nn {path}")
-        model.load_state_dict(torch.load(path, map_location=torch.device(device)))
+        model.load_state_dict(
+            torch.load(path, map_location=torch.device(device), weights_only=True)
+        )
     return model.to(device)
 
 
