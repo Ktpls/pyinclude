@@ -467,7 +467,7 @@ class GlobalAvgPooling(torch.nn.Module):
         return GlobalAvgPooling.static_forward(x)
 
 
-def setModuleFree(backbone: torch.nn.Module, freeLayers):
+def setModuleFree(backbone: torch.nn.Module, freeLayers:typing.Iterable):
     for name, param in backbone.named_parameters():
         if any([name.startswith(fl) for fl in freeLayers]):
             param.requires_grad = True

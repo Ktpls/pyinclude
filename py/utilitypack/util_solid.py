@@ -21,6 +21,7 @@ import uuid
 import json
 import zipfile
 import heapq
+import queue
 
 """
 solid
@@ -465,6 +466,11 @@ class SingleSectionedTimer:
     def get(self) -> float:
         return (self.timeCounter)() - self._starttime if self.isRunning() else 0
 
+    def getAndRestart(self) -> float:
+        v = self.get()
+        self.start()
+        return v
+
     def __init__(self, startNow=False):
         self.clear()
         if startNow:
@@ -703,7 +709,7 @@ class SyncExecutable:
 
     # override
     def main(self, **arg):
-        raise BaseException("not implemented")
+        raise NotImplementedError("not implemented")
 
     def run(self, **arg):
         def foo():
@@ -1203,10 +1209,14 @@ _setBackFun({lambdaName})
 
 def ReprObject(o):
     def serialize(o):
-        if hasattr(o, "__repr__"):
-            return o.__repr__()
+        member = {k: v for k, v in o.__dict__.items() if not str.startswith(k, "_")}
+        if len(member) == 0:
+            if hasattr(o, "__repr__"):
+                return o.__repr__()
+            else:
+                return str(o)
         else:
-            return {k: v for k, v in o.__dict__.items() if not str.startswith(k, "_")}
+            return member
 
     return json.dumps(
         o,
@@ -1338,6 +1348,29 @@ class Section:
 
     def cut(self, container):
         return container[self.start : self.end]
+
+
+def AutoFunctional(clz):
+    for name, func in clz.__dict__.items():
+        if not callable(func):
+            continue
+        # only specified to be none
+        if inspect.signature(func).return_annotation is not None:
+            continue
+        if isinstance(func, staticmethod):
+            continue
+        if name == "__init__":
+            continue
+
+        def funcToFunctional(func):
+            def functionalWrapped(self, *args, **kw):
+                func(self, *args, **kw)
+                return self
+
+            return functionalWrapped
+
+        setattr(clz, name, funcToFunctional(func))
+    return clz
 
 
 ################################################
@@ -1684,6 +1717,41 @@ try:
         @staticmethod
         def of(url: str):
             return UrlFullResolution(url)
+
+except ImportError:
+    pass
+
+try:
+
+    import aenum
+
+    def ExtendEnum(src):
+        def deco_inner(cls):
+            nonlocal src
+            if (
+                issubclass(src, aenum.Enum)
+                or aenum.stdlib_enums
+                and issubclass(src, aenum.stdlib_enums)
+            ):
+                src = src.__members__.items()
+            for name, value in src:
+                aenum.extend_enum(cls, name, value)
+            return cls
+
+        return deco_inner
+
+    class MessagedThread:
+        class MessageType(aenum.Enum):
+            stop = 0
+
+        @dataclasses.dataclass
+        class Message:
+            type: "MessagedThread.MessageType"
+            body: typing.Any = None
+
+        mq: queue.Queue["MessagedThread.Message"] = queue.Queue()
+
+        def run(self): ...
 
 except ImportError:
     pass

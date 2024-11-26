@@ -1,7 +1,9 @@
 from .util_np import *
 
 import matplotlib.pyplot as plt
+
 plt.style.use("dark_background")
+
 
 def NewPyPlotAxis():
     fig, ax = plt.subplots()
@@ -44,3 +46,17 @@ class MassivePicturePlot:
 
     def isFull(self):
         return self.i > np.prod(self.plotShape)
+
+
+@dataclasses.dataclass
+class MassivePicturePlotSubimged(MassivePicturePlot):
+    mainGrid: list
+    subimgPerInstance: int
+    fig: plt.Figure = None
+
+    def __post_init__(self):
+        y, x = self.mainGrid
+        super().__init__([y, self.subimgPerInstance * x], fig=self.fig)
+
+
+FloatImgPltImshowConfig = {"vmin": 0, "vmax": 1}

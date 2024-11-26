@@ -429,18 +429,20 @@ class Port8111:
         json_data = response.json()
         return json_data
 
-    @staticmethod
-    def get(
-        queryType: "Port8111.QueryType",
-        param=None,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.Union[
+    Port8111RetType = typing.Union[
         "Port8111.BeanIndicatorAir",
         "Port8111.BeanIndicatorTank",
         "Port8111.BeanMapInfo",
         "Port8111.BeanState",
         "Port8111.BeanInvalid",
-    ]:
+    ]
+
+    @staticmethod
+    def get(
+        queryType: "Port8111.QueryType",
+        param=None,
+        timeout: typing.Optional[float] = None,
+    ) -> Port8111RetType:
         json_data = Port8111.get_raw_json(queryType, param=param, timeout=timeout)
         return queryType.parseJson(json_data)
 
@@ -463,7 +465,9 @@ class Port8111Cache:
         self.typeCache = dict()
         self.fetch8111Interval = Coalesce(fetch8111Interval, 1)
 
-    def get(self, queryType: Port8111.QueryType, newest=None):
+    def get(
+        self, queryType: Port8111.QueryType, newest=None
+    ) -> Port8111.Port8111RetType:
         if queryType not in self.typeCache:
             self.typeCache[queryType] = self.SingleTypeCache(
                 queryType, self.fetch8111Interval

@@ -134,7 +134,7 @@ public:
 
     double getAndRestart() {
         double elapsed = get();
-        clear();
+        start();
         return elapsed;
     }
 

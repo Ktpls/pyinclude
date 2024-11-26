@@ -329,7 +329,7 @@ class TimerTest(unittest.TestCase):
         return StubbedTimer
 
     def initPerfStatistic(self):
-        
+
         class StubbedPs(perf_statistic):
             def __init__(self2, startnow=False):
                 super().__init__(startnow=False)
@@ -366,6 +366,30 @@ class TimerTest(unittest.TestCase):
         ssd.start()
         self.t = 3
         self.assertEqual(ssd.get(), 1)
+
+
+class AutoFunctionalTest(unittest.TestCase, RedirectedPrint):
+    def test_AutoFunctional(self):
+
+        @AutoFunctional
+        class Clz:
+            def __init__(self2, val) -> None:
+                self2.val = val
+
+            def inc(self2) -> None:
+                self2.val += 1
+
+            def print(self2) -> None:
+                self.print(self2.val)
+
+            @staticmethod
+            def staticMethod() -> None:
+                self.print("im static")
+
+        a = Clz(1)
+        a.inc().print().inc().print().staticMethod()
+        self.assertEqual(a.val, 3)
+        self.assertEqual(self.msg, ["2", "3", "im static"])
 
 
 unittest.main()
