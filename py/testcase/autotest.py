@@ -163,7 +163,7 @@ class MaxRetryTest(unittest.TestCase):
 
     def test_fail(self):
         result = 0
-        retry = MaxRetry(lambda: result >= 5, maxRetry=3)
+        retry = MaxRetry(lambda: result >= 5, maxRetry=3, errOnMaxRetry=False)
         for i in retry:
             result = i
         self.assertEqual(result, 3)
@@ -370,6 +370,7 @@ class TimerTest(unittest.TestCase):
 
 class AutoFunctionalTest(unittest.TestCase, RedirectedPrint):
     def test_AutoFunctional(self):
+        varStatic = 0
 
         @AutoFunctional
         class Clz:
@@ -379,17 +380,18 @@ class AutoFunctionalTest(unittest.TestCase, RedirectedPrint):
             def inc(self2) -> None:
                 self2.val += 1
 
-            def print(self2) -> None:
-                self.print(self2.val)
+            def assertVal(self2, val) -> None:
+                self.assertEqual(self2.val, val)
 
             @staticmethod
             def staticMethod() -> None:
-                self.print("im static")
+                nonlocal varStatic
+                varStatic += 1
 
         a = Clz(1)
-        a.inc().print().inc().print().staticMethod()
+        a.inc().assertVal(2).inc().assertVal(3).staticMethod()
         self.assertEqual(a.val, 3)
-        self.assertEqual(self.msg, ["2", "3", "im static"])
+        self.assertEqual(varStatic, 1)
 
 
 class BeanUtilTest(unittest.TestCase):

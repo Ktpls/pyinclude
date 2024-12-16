@@ -3,7 +3,12 @@ from utilitypack.cold.util_solid import *
 from utilitypack.util_windows import *
 from utilitypack.util_winkey import *
 
+"""
+serves for a light enviroment for writing auto test
+"""
 
+
+# copied from autotest.py
 class RedirectedPrint:
     def clearPrinted(self):
         self.msg = list()
@@ -16,7 +21,6 @@ class RedirectedPrint:
 
     def getPrinted(self):
         return self.msg
-
 
 
 unittest.main()
