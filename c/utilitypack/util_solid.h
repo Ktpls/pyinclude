@@ -141,3 +141,14 @@ public:
 private:
     TimePoint _starttime; // 计时开始的时间点
 };
+
+std::vector<char> ReadFile(const std::string& path) {
+    std::ifstream file(path, std::ios::binary + std::ios::in);
+    if (!file) throw std::runtime_error("Could not open file " + path);
+    file.seekg(0, std::ios::end);
+    auto filesize = std::streamoff(file.tellg());
+    file.seekg(0, std::ios::beg);
+    std::vector<char> buffer(filesize);
+    file.read(buffer.data(), filesize);
+    return buffer;
+}

@@ -22,6 +22,7 @@ import json
 import zipfile
 import heapq
 import queue
+import logging
 
 """
 solid
@@ -200,12 +201,17 @@ class BulletinBoard:
             return self.idlecontent
 
 
-def AllFileIn(path, includeFileInSubDir=True):
+def AllFileIn(
+    path, includeFileInSubDir=True, path_filter: typing.Callable[[str], bool] = None
+):
     ret = []
     for dirpath, dir, file in os.walk(path):
         if not includeFileInSubDir and dirpath != path:
             continue
-        ret.extend([os.path.join(dirpath, f) for f in file])
+        fullPath = [os.path.join(dirpath, f) for f in file]
+        if path_filter is not None:
+            fullPath = list(filter(path_filter, fullPath))
+        ret.extend(fullPath)
     return ret
 
 
@@ -371,14 +377,18 @@ def EnsureDirectoryExists(directory):
         os.makedirs(directory)
 
 
-def WriteFile(path, content):
+def EnsureFileDirExists(path):
     EnsureDirectoryExists(os.path.dirname(path))
+
+
+def WriteFile(path, content):
+    EnsureFileDirExists(path)
     with open(path, "wb+") as f:
         f.write(content)
 
 
 def AppendFile(path, content):
-    EnsureDirectoryExists(os.path.dirname(path))
+    EnsureFileDirExists(path)
     with open(path, "ab+") as f:
         f.write(content.encode("utf-8"))
 
@@ -850,8 +860,10 @@ class AccessibleQueue:
 
 class BeanUtil:
     @dataclasses.dataclass
-    class Option:
+    class CopyOption:
         ignoreNoneInSrc: bool = True
+        recursive: bool = True
+        _expectFullyDictLikeDest: bool = False
 
     """
     have to deal with dict, object, and class(only on dest)
@@ -872,6 +884,16 @@ class BeanUtil:
 
     @staticmethod
     def _GetEmptyInstanceOfClass(cls):
+        if cls == int:
+            return 0
+        if cls == str:
+            return ""
+        if cls == bool:
+            return False
+        if cls == float:
+            return 0.0
+        if cls in (dict, list, tuple, set):
+            return cls()
         args = inspect.getargs(cls.__init__.__code__)
         if len(args) > 1:
             # found init with arg more than self
@@ -888,61 +910,144 @@ class BeanUtil:
             return cls()
 
     @staticmethod
-    def _FieldConversionFunc(obj, field):
-        taipe = obj.__annotations__.get(field, None)
+    def _TypeOfField(obj, field):
+        taipe = None
+        if isinstance(obj, dict):
+            taipe = None
+        if hasattr(obj, "__annotations__"):
+            taipe = obj.__annotations__.get(field, None)
         if taipe is None or isinstance(taipe, str):
             # not type annotated, or annotated like field:"some class"
-            return IdentityMapping
+            taipe = None
         if hasattr(taipe, "__origin__"):
-            # typing.GenericAlias
+            # typing.GenericAlias, or list[A]-like
             taipe = taipe.__origin__
         return taipe
 
     @staticmethod
-    def _GetterOf(obj):
-        if isinstance(obj, dict):
-            return lambda: obj.items()
-        return lambda: obj.__dict__.items()
+    def _PrimaryTypeConversionFunc(taipe):
+        if taipe is None:
+            taipe = IdentityMapping
+        return taipe
 
     @staticmethod
-    def _SetterOf(obj):
-        if isinstance(obj, dict):
+    def ObjectSerializer(o):
+        # difference between this and toMap() is
+        # this should always return a serializable,
+        # while toMap() may give up further conversion
+
+        # try parse with dict
+        if hasattr(o, "__dict__"):
+            member = {k: v for k, v in o.__dict__.items() if not str.startswith(k, "_")}
+            if len(member) != 0:
+                return member
+        # try repr
+        if hasattr(o, "__repr__"):
+            try:
+                return o.__repr__()
+            except:
+                pass
+        return str(o)
+
+    @staticmethod
+    def ReprObject(o):
+
+        return json.dumps(
+            o,
+            indent=4,
+            ensure_ascii=False,
+            default=BeanUtil.ObjectSerializer,
+            sort_keys=True,
+        )
+
+    @staticmethod
+    def _isPrimaryType(t):
+        return t in (int, float, str, bool, type)
+
+    @staticmethod
+    def _isFlatCollection(t):
+        return t in (list, tuple)
+
+    @staticmethod
+    def _isCustomStructure(t):
+        return not BeanUtil._isPrimaryType(t) and not BeanUtil._isFlatCollection(t)
+
+    @staticmethod
+    def copyProperties(src, dst: object, option: "BeanUtil.CopyOption" = CopyOption()):
+        if inspect.isclass(dst):
+            dst = BeanUtil._GetEmptyInstanceOfClass(dst)
+        srcType = type(src)
+        dstType = type(dst)
+        if BeanUtil._isPrimaryType(dstType):
+            return dstType(src)
+        if BeanUtil._isFlatCollection(srcType) != BeanUtil._isFlatCollection(dstType):
+            raise ValueError("src and dst must be or not be array the same time")
+
+        if BeanUtil._isFlatCollection(srcType):
+            Getter = lambda: enumerate(src)
+        elif srcType == dict:
+            Getter = lambda: src.items()
+        else:
+            Getter = lambda: src.__dict__.items()
+
+        if dstType == list:
+
+            def ListSetter(obj: list, k, v):
+                if k >= len(obj):
+                    obj.extend([None] * (k - len(obj) + 1))
+                obj[k] = v
+
+            Setter = ListSetter
+        elif dstType == tuple:
+            raise ValueError("can not copy to tuple")
+        elif dstType == dict:
 
             def DictSetter(obj, k, v):
                 obj[k] = v
 
-            return DictSetter
+            Setter = DictSetter
+        else:
 
-        def ObjSetter(obj, k, v):
-            if k in obj.__dict__:
-                try:
-                    # try convert it to proper type
-                    v = BeanUtil._FieldConversionFunc(obj, k)(v)
-                except:
-                    pass
-                obj.__setattr__(k, v)
+            def ObjSetter(obj, k, v):
+                if k in obj.__dict__:
+                    try:
+                        # try convert it to proper type
+                        v = BeanUtil._PrimaryTypeConversionFunc()(v)
+                    except:
+                        pass
+                    obj.__setattr__(k, v)
 
-        return ObjSetter
+            Setter = ObjSetter
 
-    @staticmethod
-    def _DictOrObj2DictOrObjCopy(src: object, dst: object, option: "BeanUtil.Option"):
-        Getter = BeanUtil._GetterOf(src)
-        Setter = BeanUtil._SetterOf(dst)
         for k, v in Getter():
             if option.ignoreNoneInSrc and v is None:
                 continue
+            if BeanUtil._isPrimaryType(type(v)):
+                # try convert it to proper type
+                v = BeanUtil._PrimaryTypeConversionFunc(
+                    BeanUtil._TypeOfField(dstType, k)
+                )(v)
+            elif option.recursive:
+                # deep copy
+                # try get type info from dstType
+                desiredType = BeanUtil._TypeOfField(dstType, k)
+                if desiredType is None:
+                    # didnt say, keep as it was
+                    desiredType = type(v)
+
+                # cuz u said expected
+                if option._expectFullyDictLikeDest and BeanUtil._isCustomStructure(
+                    desiredType
+                ):
+                    desiredType = dict
+                v = BeanUtil.copyProperties(v, desiredType, option)
             Setter(dst, k, v)
         return dst
 
     @staticmethod
-    def copyProperties(src, dst: object, option: "BeanUtil.Option" = Option()):
-        if inspect.isclass(dst):
-            dst = BeanUtil._GetEmptyInstanceOfClass(dst)
-        return BeanUtil._DictOrObj2DictOrObjCopy(src, dst, option)
-
-    @staticmethod
-    def toMap(src, option: "BeanUtil.Option" = Option()):
-        return BeanUtil._DictOrObj2DictOrObjCopy(src, dict(), option)
+    def toMap(src, option: "BeanUtil.CopyOption" = CopyOption()):
+        option._expectFullyDictLikeDest = True
+        return BeanUtil.copyProperties(src, dict, option)
 
 
 class Container:
@@ -1207,26 +1312,6 @@ _setBackFun({lambdaName})
     return func
 
 
-def ReprObject(o):
-    def serialize(o):
-        member = {k: v for k, v in o.__dict__.items() if not str.startswith(k, "_")}
-        if len(member) == 0:
-            if hasattr(o, "__repr__"):
-                return o.__repr__()
-            else:
-                return str(o)
-        else:
-            return member
-
-    return json.dumps(
-        o,
-        indent=4,
-        ensure_ascii=False,
-        default=serialize,
-        sort_keys=True,
-    )
-
-
 def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
     zipf = zipfile.ZipFile(zipf)
     singleFile = not isinstance(filename, (tuple, list))
@@ -1245,18 +1330,24 @@ def RunThis(f: typing.Callable[[], typing.Any]):
 
 
 class MaxRetry:
-    def __init__(self, succCond: typing.Callable[[], bool], maxRetry: int = 3):
+    def __init__(
+        self, succCond: typing.Callable[[], bool], maxRetry: int = 3, errOnMaxRetry=True
+    ):
         self.succCond = succCond
         self.maxRetry = maxRetry
         self.i = 0
         self.isSuccessed = False
+        self.errOnMaxRetry = errOnMaxRetry
 
     def __iter__(self):
         return self
 
     def __next__(self):
         if self.i >= self.maxRetry:
-            raise StopIteration
+            if self.errOnMaxRetry:
+                raise RuntimeError("Max retry reached")
+            else:
+                raise StopIteration
         if self.succCond():
             self.isSuccessed = True
             raise StopIteration
@@ -1371,6 +1462,80 @@ def AutoFunctional(clz):
 
         setattr(clz, name, funcToFunctional(func))
     return clz
+
+
+@Singleton
+class GSLogger:
+    loggingFormat = "%(asctime)s - %(levelname)s - %(message)s"
+    bulletinLogFormat = "%(message)s"
+    loggingLevel = logging.INFO
+
+    DefaultGlobalSysLoggerName = "GLOBAL_SYS_LOGGER"
+
+    class Handlers:
+        @staticmethod
+        def ConsoleHandler():
+            return logging.StreamHandler()
+
+        @staticmethod
+        def FileHandler(logFilePath="asset/log/"):
+            EnsureDirectoryExists(logFilePath)
+            fileName = f"{datetime.now().strftime('%Y-%m-%d')}.log"
+            return logging.FileHandler(os.path.join(logFilePath, fileName))
+
+    def __init__(self, handlers: list[logging.Handler] = None):
+        # Create a logger
+        if handlers is None:
+            handlers = [self.Handlers.ConsoleHandler(), self.Handlers.FileHandler()]
+        logger = logging.getLogger(self.DefaultGlobalSysLoggerName)
+        logger.setLevel(self.loggingLevel)
+        for h in handlers:
+            h.setFormatter(logging.Formatter(self.loggingFormat))
+            logger.addHandler(h)
+
+        self.logger = logger
+
+    @EasyWrapper
+    @staticmethod
+    def ExceptionLogged(f, execType=Exception):
+        execType = tuple(NormalizeIterableOrSingleArgToIterable(execType))
+
+        @functools.wraps(f)
+        def f2(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except BaseException as err:
+                if isinstance(err, execType):
+                    GSLogger().logger.exception(err)
+                raise err
+
+        return f2
+
+    @EasyWrapper
+    @staticmethod
+    def TimeLogged(f):
+
+        @functools.wraps(f)
+        def f2(*args, **kwargs):
+            stt = SingleSectionedTimer(True)
+            ret = f(*args, **kwargs)
+            GSLogger().logger.info(f"time cost of {f.__name__}: {stt.get()}")
+            return ret
+
+        return f2
+
+
+class CollUtil:
+    @staticmethod
+    def split(iterable: typing.Iterable, size: int):
+        return [
+            iterable[i : min(i + size, len(iterable))]
+            for i in range(0, len(iterable), size)
+        ]
+
+
+def NormalizeCrlf(s: str):
+    return s.replace("\r\n", "\n").replace("\r", "\n")
 
 
 ################################################

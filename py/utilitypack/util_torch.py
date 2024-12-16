@@ -1,12 +1,10 @@
 from .util_np import *
-from .util_ocv import *
-from .util_pyplot import *
 import torch
 import platform
 import os
 
 
-def getDevice():
+def getTorchDevice():
     print(getDeviceInfo())
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device} device")
@@ -297,8 +295,8 @@ class ModuleFunc(torch.nn.Module):
         return self.func(x)
 
 
-from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
+# from torch.utils.tensorboard import SummaryWriter
+# from datetime import datetime
 
 
 import time
@@ -436,24 +434,6 @@ def ModuleArgDistribution(mod: torch.nn.Module, OnlyWithGrad: bool = True):
     )
 
 
-@dataclasses.dataclass
-class ModelDemo:
-    model: torch.nn.Module
-    mppShape: np.ndarray
-    iterNum: int
-
-    def __post_init__(self):
-        self.mpp = MassivePicturePlot(self.mppShape)
-
-    def iterWork(self, i):
-        pass
-
-    def do(self):
-        with torch.no_grad():
-            self.model.eval()
-            for i in range(self.iterNum):
-                self.iterWork(i)
-
 
 class GlobalAvgPooling(torch.nn.Module):
     def __init__(self) -> None:
@@ -467,7 +447,7 @@ class GlobalAvgPooling(torch.nn.Module):
         return GlobalAvgPooling.static_forward(x)
 
 
-def setModuleFree(backbone: torch.nn.Module, freeLayers:typing.Iterable):
+def setModuleFree(backbone: torch.nn.Module, freeLayers: typing.Iterable):
     for name, param in backbone.named_parameters():
         if any([name.startswith(fl) for fl in freeLayers]):
             param.requires_grad = True
@@ -530,3 +510,17 @@ class MPn(torch.nn.Module):
         o_pool = self.wayPooling(x)
         o_conv = self.wayConv(x)
         return self.combiner(torch.concat([o_pool, o_conv], dim=1))
+
+
+class OnlineGeneratedDataset(torch.utils.data.Dataset):
+    def __init__(self, length):
+        self.length = length
+
+    def generate(self):
+        raise NotImplementedError()
+
+    def __getitem__(self, index: int):
+        return self.generate()
+
+    def __len__(self):
+        return self.length

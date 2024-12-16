@@ -674,10 +674,6 @@ class HotkeyManager:
             self.hotkeymanagerStack.append(old)
 
 
-def NormalizeCrlf(s: str):
-    return s.replace("\r\n", "\n").replace("\r", "\n")
-
-
 @dataclasses.dataclass
 class Rhythm:
     @dataclasses.dataclass
