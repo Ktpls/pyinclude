@@ -909,20 +909,37 @@ class BeanUtil:
         else:
             return cls()
 
-    @staticmethod
-    def _TypeOfField(obj, field):
-        taipe = None
-        if isinstance(obj, dict):
+    class _TypeResolution:
+        def __init__(self, taipe):
+            self.taipe = taipe
+
+        def getChild(self, key) -> "BeanUtil._TypeResolution":
             taipe = None
-        if hasattr(obj, "__annotations__"):
-            taipe = obj.__annotations__.get(field, None)
-        if taipe is None or isinstance(taipe, str):
-            # not type annotated, or annotated like field:"some class"
-            taipe = None
-        if hasattr(taipe, "__origin__"):
-            # typing.GenericAlias, or list[A]-like
-            taipe = taipe.__origin__
-        return taipe
+            if isinstance(self.taipe, dict):
+                taipe = None
+            elif self.taipe is None or isinstance(self.taipe, str):
+                # not type annotated, or annotated like field:"some class" so i cant process
+                taipe = None
+            elif hasattr(self.taipe, "__annotations__"):
+                taipe = self.taipe.__annotations__.get(key, None)
+            elif hasattr(self.taipe, "__origin__"):
+                # typing.GenericAlias, or <container>[<element>] like
+                if BeanUtil._isFlatCollection(self.taipe.__origin__) and isinstance(
+                    key, int
+                ):
+                    if hasattr(self.taipe, "__args__"):
+                        taipe = self.taipe.__args__[0]
+                elif self.taipe.__origin__ in (dict):
+                    taipe = self.taipe.__args__[1]
+
+            return BeanUtil._TypeResolution(taipe)
+
+        def getType(self):
+            taipe = self.taipe
+            if hasattr(taipe, "__origin__"):
+                # typing.GenericAlias, or list[A]-like
+                taipe = taipe.__origin__
+            return taipe
 
     @staticmethod
     def _PrimaryTypeConversionFunc(taipe):
@@ -973,14 +990,29 @@ class BeanUtil:
         return not BeanUtil._isPrimaryType(t) and not BeanUtil._isFlatCollection(t)
 
     @staticmethod
-    def copyProperties(src, dst: object, option: "BeanUtil.CopyOption" = CopyOption()):
+    def copyProperties(
+        src,
+        dst: object,
+        option: "BeanUtil.CopyOption" = CopyOption(),
+        _srcTypeResolution: _TypeResolution = None,
+        _dstTypeResolution: _TypeResolution = None,
+    ):
         if inspect.isclass(dst):
             dst = BeanUtil._GetEmptyInstanceOfClass(dst)
-        srcType = type(src)
-        dstType = type(dst)
+        if _srcTypeResolution is None:
+            _srcTypeResolution = BeanUtil._TypeResolution(type(src))
+        if _dstTypeResolution is None:
+            _dstTypeResolution = BeanUtil._TypeResolution(type(dst))
+        srcType = Coalesce(_srcTypeResolution.getType(), type(src))
+        dstType = Coalesce(_dstTypeResolution.getType(), type(dst))
         if BeanUtil._isPrimaryType(dstType):
             return dstType(src)
-        if BeanUtil._isFlatCollection(srcType) != BeanUtil._isFlatCollection(dstType):
+        if (
+            srcType is not None
+            and dstType is not None
+            and BeanUtil._isFlatCollection(srcType)
+            != BeanUtil._isFlatCollection(dstType)
+        ):
             raise ValueError("src and dst must be or not be array the same time")
 
         if BeanUtil._isFlatCollection(srcType):
@@ -1023,24 +1055,24 @@ class BeanUtil:
             if option.ignoreNoneInSrc and v is None:
                 continue
             if BeanUtil._isPrimaryType(type(v)):
-                # try convert it to proper type
+                # try convert it to proper primary type
                 v = BeanUtil._PrimaryTypeConversionFunc(
-                    BeanUtil._TypeOfField(dstType, k)
+                    _dstTypeResolution.getChild(k).getType()
                 )(v)
             elif option.recursive:
                 # deep copy
                 # try get type info from dstType
-                desiredType = BeanUtil._TypeOfField(dstType, k)
-                if desiredType is None:
-                    # didnt say, keep as it was
-                    desiredType = type(v)
+                srcChild = _srcTypeResolution.getChild(k)
+                dstChild = _dstTypeResolution.getChild(k)
+                desiredType = Coalesce(dstChild.getType(), srcChild.getType(), type(v))
 
-                # cuz u said expected
+                # intercept cuz u said expected
                 if option._expectFullyDictLikeDest and BeanUtil._isCustomStructure(
                     desiredType
                 ):
                     desiredType = dict
-                v = BeanUtil.copyProperties(v, desiredType, option)
+                    dstChild = BeanUtil._TypeResolution(desiredType)
+                v = BeanUtil.copyProperties(v, desiredType, option, srcChild, dstChild)
             Setter(dst, k, v)
         return dst
 
