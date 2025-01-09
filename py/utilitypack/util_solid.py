@@ -147,7 +147,14 @@ def EasyWrapper(wrapperLogic=None):
                 and [
                     1
                     for k, v in inspect.signature(wrapperLogic).parameters.items()
-                    if v.default == inspect.Parameter.empty
+                    if (
+                        v.default == inspect.Parameter.empty
+                        and v.kind
+                        not in (
+                            inspect.Parameter.VAR_POSITIONAL,  # *a
+                            inspect.Parameter.VAR_KEYWORD,  # **kw
+                        )
+                    )
                 ].__len__()
                 == 1
             ):
@@ -883,6 +890,12 @@ class BeanUtil:
         return result
 
     @staticmethod
+    def _GetClassInstanceFields(inst):
+        staticFields = BeanUtil._GetClassFields(type(inst))
+        dynamicFields = {k: type(v) for k, v in inst.__dict__.items()}
+        return {**dynamicFields, **staticFields}
+
+    @staticmethod
     def _GetEmptyInstanceOfClass(cls):
         if cls == int:
             return 0
@@ -894,20 +907,20 @@ class BeanUtil:
             return 0.0
         if cls in (dict, list, tuple, set):
             return cls()
-        args = inspect.getargs(cls.__init__.__code__)
-        if len(args) > 1:
-            # found init with arg more than self
-            inst = object.__new__(cls)
-            fields = BeanUtil._GetClassFields(cls)
-            for name, taipe in fields.items():
-                """
-                for taipe as class, its possible to recursively call GetEmptyInstance
-                but taipe could be str, or typing.GenericAlias
-                """
-                setattr(inst, name, None)
-            return inst
-        else:
-            return cls()
+        if hasattr(cls, "__init__") and hasattr(cls.__init__, "__code__"):
+            args = inspect.getargs(cls.__init__.__code__)
+            if len(args) > 1:
+                # found init with arg more than self
+                inst = object.__new__(cls)
+                fields = BeanUtil._GetClassFields(cls)
+                for name, taipe in fields.items():
+                    """
+                    for taipe as class, its possible to recursively call GetEmptyInstance
+                    but taipe could be str, or typing.GenericAlias
+                    """
+                    setattr(inst, name, None)
+                return inst
+        return cls()
 
     class _TypeResolution:
         def __init__(self, taipe):
@@ -942,10 +955,13 @@ class BeanUtil:
             return taipe
 
     @staticmethod
-    def _PrimaryTypeConversionFunc(taipe):
+    def _PrimaryTypeConversionFunc(taipe, obj):
         if taipe is None:
             taipe = IdentityMapping
-        return taipe
+        try:
+            return taipe(obj)
+        except:
+            return obj
 
     @staticmethod
     def ObjectSerializer(o):
@@ -979,7 +995,7 @@ class BeanUtil:
 
     @staticmethod
     def _isPrimaryType(t):
-        return t in (int, float, str, bool, type)
+        return t in (int, float, str, bool, type, type(None))
 
     @staticmethod
     def _isFlatCollection(t):
@@ -1005,8 +1021,8 @@ class BeanUtil:
             _dstTypeResolution = BeanUtil._TypeResolution(type(dst))
         srcType = Coalesce(_srcTypeResolution.getType(), type(src))
         dstType = Coalesce(_dstTypeResolution.getType(), type(dst))
-        if BeanUtil._isPrimaryType(dstType):
-            return dstType(src)
+        if BeanUtil._isPrimaryType(srcType) or BeanUtil._isPrimaryType(dstType):
+            return BeanUtil._PrimaryTypeConversionFunc(dstType, src)
         if (
             srcType is not None
             and dstType is not None
@@ -1039,14 +1055,14 @@ class BeanUtil:
 
             Setter = DictSetter
         else:
+            instFields = BeanUtil._GetClassInstanceFields(dst)
 
             def ObjSetter(obj, k, v):
-                if k in obj.__dict__:
-                    try:
-                        # try convert it to proper type
-                        v = BeanUtil._PrimaryTypeConversionFunc()(v)
-                    except:
-                        pass
+                if k in instFields:
+                    # try convert it to proper type
+                    v = BeanUtil._PrimaryTypeConversionFunc(
+                        _dstTypeResolution.getChild(k).getType(), v
+                    )
                     obj.__setattr__(k, v)
 
             Setter = ObjSetter
@@ -1057,8 +1073,8 @@ class BeanUtil:
             if BeanUtil._isPrimaryType(type(v)):
                 # try convert it to proper primary type
                 v = BeanUtil._PrimaryTypeConversionFunc(
-                    _dstTypeResolution.getChild(k).getType()
-                )(v)
+                    _dstTypeResolution.getChild(k).getType(), (v)
+                )
             elif option.recursive:
                 # deep copy
                 # try get type info from dstType
@@ -1356,8 +1372,8 @@ def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
 
 
 @EasyWrapper
-def RunThis(f: typing.Callable[[], typing.Any]):
-    f()
+def RunThis(f: typing.Callable[[], typing.Any], *a, **kw):
+    f(*a, **kw)
     return f
 
 
@@ -1476,6 +1492,8 @@ class Section:
 def AutoFunctional(clz):
     for name, func in clz.__dict__.items():
         if not callable(func):
+            continue
+        if inspect.isclass(func):
             continue
         # only specified to be none
         if inspect.signature(func).return_annotation is not None:
