@@ -1333,7 +1333,7 @@ def mlambda(s: str, _globals=None, _locals=None) -> typing.Callable:
     paraAndType = match["paraAndType"]
     body = match["body"]
 
-    emptyLine = regex.compile("^\s*(#.*)?$", flags=regex.MULTILINE)
+    emptyLine = regex.compile(r"^\s*(#.*)?$", flags=regex.MULTILINE)
 
     def fixBodyIndent(body: str):
         # force at least 1 space indent
