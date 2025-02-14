@@ -427,7 +427,7 @@ class BeanUtilTest(unittest.TestCase):
             A(1, "s"),
             "s",
         )
-        m = BeanUtil.toMap(inst)
+        m = BeanUtil.toJsonCompatible(inst)
         self.assertDictEqual(
             m,
             {
@@ -456,7 +456,7 @@ class BeanUtilTest(unittest.TestCase):
             [A(0, "s"), A(1, "s")],
             "s",
         )
-        m = BeanUtil.toMap(b)
+        m = BeanUtil.toJsonCompatible(b)
         self.assertDictEqual(
             m,
             {
@@ -487,7 +487,7 @@ class DataclassInitReorderTest(unittest.TestCase):
 
         child = Child("z", "x", "y")
         self.assertDictEqual(
-            BeanUtil.toMap(child),
+            BeanUtil.toJsonCompatible(child),
             {"x": "x", "y": "y", "z": "z"},
         )
 

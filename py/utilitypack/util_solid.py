@@ -23,6 +23,7 @@ import zipfile
 import heapq
 import queue
 import logging
+import types
 
 """
 solid
@@ -870,20 +871,19 @@ class BeanUtil:
     class CopyOption:
         ignoreNoneInSrc: bool = True
         recursive: bool = True
-        _expectFullyDictLikeDest: bool = False
 
     """
     have to deal with dict, object, and class(only on dest)
     """
 
     @staticmethod
-    def _GetClassFields(clz):
+    def _GetClassDeclFields(clz):
         parents = NormalizeIterableOrSingleArgToIterable(clz.__base__)
         result = dict()
         for p in parents:
             if p == object:
                 continue
-            result.update(BeanUtil._GetClassFields(p))
+            result.update(BeanUtil._GetClassDeclFields(p))
         if hasattr(clz, "__annotations__"):
             # override
             result.update(clz.__annotations__)
@@ -891,7 +891,7 @@ class BeanUtil:
 
     @staticmethod
     def _GetClassInstanceFields(inst):
-        staticFields = BeanUtil._GetClassFields(type(inst))
+        staticFields = BeanUtil._GetClassDeclFields(type(inst))
         dynamicFields = {k: type(v) for k, v in inst.__dict__.items()}
         return {**dynamicFields, **staticFields}
 
@@ -912,7 +912,7 @@ class BeanUtil:
             if len(args) > 1:
                 # found init with arg more than self
                 inst = object.__new__(cls)
-                fields = BeanUtil._GetClassFields(cls)
+                fields = BeanUtil._GetClassDeclFields(cls)
                 for name, taipe in fields.items():
                     """
                     for taipe as class, its possible to recursively call GetEmptyInstance
@@ -926,6 +926,13 @@ class BeanUtil:
         def __init__(self, taipe):
             self.taipe = taipe
 
+        def getPlainType(self):
+            # ensure not GenericAlias
+            if isinstance(self.taipe, types.GenericAlias):
+                return self.taipe.__origin__
+            else:
+                return self.taipe
+
         def getChild(self, key) -> "BeanUtil._TypeResolution":
             taipe = None
             if isinstance(self.taipe, dict):
@@ -935,7 +942,7 @@ class BeanUtil:
                 taipe = None
             elif hasattr(self.taipe, "__annotations__"):
                 taipe = self.taipe.__annotations__.get(key, None)
-            elif hasattr(self.taipe, "__origin__"):
+            elif isinstance(self.taipe, types.GenericAlias):
                 # typing.GenericAlias, or <container>[<element>] like
                 if BeanUtil._isFlatCollection(self.taipe.__origin__) and isinstance(
                     key, int
@@ -948,11 +955,7 @@ class BeanUtil:
             return BeanUtil._TypeResolution(taipe)
 
         def getType(self):
-            taipe = self.taipe
-            if hasattr(taipe, "__origin__"):
-                # typing.GenericAlias, or list[A]-like
-                taipe = taipe.__origin__
-            return taipe
+            return self.taipe
 
     @staticmethod
     def _PrimaryTypeConversionFunc(taipe, obj):
@@ -994,108 +997,163 @@ class BeanUtil:
         )
 
     @staticmethod
-    def _isPrimaryType(t):
-        return t in (int, float, str, bool, type, type(None))
+    def _isPrimaryType(t: type):
+        return t in (int, float, str, bool, type, type(None)) or BeanUtil.isEnum(t)
 
     @staticmethod
-    def _isFlatCollection(t):
+    def isEnum(t):
+        return issubclass(t, enum.Enum)
+
+    @staticmethod
+    def _isFlatCollection(t: type):
         return t in (list, tuple)
 
     @staticmethod
-    def _isCustomStructure(t):
+    def _isCustomStructure(t: type):
         return not BeanUtil._isPrimaryType(t) and not BeanUtil._isFlatCollection(t)
+
+    @dataclasses.dataclass
+    class CompatibleStructureOperator:
+        obj: typing.Any
+        objtype: type = None
+        objtypeRes: "BeanUtil._TypeResolution" = None
+        fieldType: dict[str, type] | type = None
+
+        def __post_init__(self):
+            self.objtype = Coalesce(self.objtype, type(self.obj))
+            self.objtypeRes = BeanUtil._TypeResolution(self.objtype)
+
+        def _init_type_info(self):
+            if self.fieldType is None:
+                instFields = dict()
+                if self.objtypeRes.getPlainType() in (list, tuple):
+                    instFields = (
+                        BeanUtil._TypeResolution(self.objtype)
+                        .getChild(0)
+                        .getPlainType()
+                    )
+                elif self.objtypeRes.getPlainType() == dict:
+                    instFields = (
+                        BeanUtil._TypeResolution(self.objtype)
+                        .getChild(None)
+                        .getPlainType()
+                    )
+                else:
+                    instFields = BeanUtil._GetClassInstanceFields(self.obj)
+                self.fieldType = instFields
+
+        def typeInfo(self, key):
+            self._init_type_info()
+            if isinstance(self.fieldType, dict):
+                return self.fieldType.get(key, None)
+            else:
+                return self.fieldType
+
+        def getter(self):
+            src = self.obj
+            if BeanUtil._isFlatCollection(self.objtypeRes.getPlainType()):
+                ret = enumerate(src)
+            elif self.objtypeRes.getPlainType() == dict:
+                ret = src.items()
+            else:
+                ret = src.__dict__.items()
+            return ret
+
+        def isSettable(self, key):
+            if self.objtypeRes.getPlainType() == list:
+                return True
+            elif self.objtypeRes.getPlainType() == dict:
+                return True
+            elif self.objtypeRes.getPlainType() == tuple:
+                return False
+            else:
+                self._init_type_info()
+                return key in self.fieldType
+
+        def set(self, key, value):
+            if self.objtypeRes.getPlainType() == list:
+
+                def ListSetter(obj: list, k, v):
+                    if k >= len(obj):
+                        obj.extend([None] * (k - len(obj) + 1))
+                    obj[k] = v
+
+                ListSetter(self.obj, key, value)
+            elif self.objtypeRes.getPlainType() == dict:
+
+                def DictSetter(obj, k, v):
+                    obj[k] = v
+
+                DictSetter(self.obj, key, value)
+            elif self.objtypeRes.getPlainType() == tuple:
+                raise ValueError("can not copy to tuple")
+            else:
+                self._init_type_info()
+
+                def ObjSetter(obj, k, v):
+                    if k in self.fieldType:
+                        # try convert it to proper type
+                        v = BeanUtil._PrimaryTypeConversionFunc(self.typeInfo(k), v)
+                        obj.__setattr__(k, v)
+
+                ObjSetter(self.obj, key, value)
 
     @staticmethod
     def copyProperties(
         src,
         dst: object,
         option: "BeanUtil.CopyOption" = CopyOption(),
-        _srcTypeResolution: _TypeResolution = None,
-        _dstTypeResolution: _TypeResolution = None,
     ):
-        if inspect.isclass(dst):
+        srcType = BeanUtil._TypeResolution(type(src))
+        if isinstance(dst, types.GenericAlias):
+            dstType = BeanUtil._TypeResolution(dst)
+            dst = BeanUtil._GetEmptyInstanceOfClass(dst.__origin__)
+        elif inspect.isclass(dst):
+            dstType = BeanUtil._TypeResolution(dst)
             dst = BeanUtil._GetEmptyInstanceOfClass(dst)
-        if _srcTypeResolution is None:
-            _srcTypeResolution = BeanUtil._TypeResolution(type(src))
-        if _dstTypeResolution is None:
-            _dstTypeResolution = BeanUtil._TypeResolution(type(dst))
-        srcType = Coalesce(_srcTypeResolution.getType(), type(src))
-        dstType = Coalesce(_dstTypeResolution.getType(), type(dst))
-        if BeanUtil._isPrimaryType(srcType) or BeanUtil._isPrimaryType(dstType):
-            return BeanUtil._PrimaryTypeConversionFunc(dstType, src)
+        else:
+            dstType = type(dst)
+
+        srcOp = BeanUtil.CompatibleStructureOperator(src, srcType.getType())
+        dstOp = BeanUtil.CompatibleStructureOperator(dst, dstType.getType())
+        if BeanUtil._isPrimaryType(srcType.getPlainType()) or BeanUtil._isPrimaryType(
+            dstType.getPlainType()
+        ):
+            return BeanUtil._PrimaryTypeConversionFunc(dstType.getPlainType(), src)
         if (
-            srcType is not None
-            and dstType is not None
-            and BeanUtil._isFlatCollection(srcType)
-            != BeanUtil._isFlatCollection(dstType)
+            srcType.getPlainType() is not None
+            and dstType.getPlainType() is not None
+            and BeanUtil._isFlatCollection(srcType.getPlainType())
+            != BeanUtil._isFlatCollection(dstType.getPlainType())
         ):
             raise ValueError("src and dst must be or not be array the same time")
-
-        if BeanUtil._isFlatCollection(srcType):
-            Getter = lambda: enumerate(src)
-        elif srcType == dict:
-            Getter = lambda: src.items()
-        else:
-            Getter = lambda: src.__dict__.items()
-
-        if dstType == list:
-
-            def ListSetter(obj: list, k, v):
-                if k >= len(obj):
-                    obj.extend([None] * (k - len(obj) + 1))
-                obj[k] = v
-
-            Setter = ListSetter
-        elif dstType == tuple:
-            raise ValueError("can not copy to tuple")
-        elif dstType == dict:
-
-            def DictSetter(obj, k, v):
-                obj[k] = v
-
-            Setter = DictSetter
-        else:
-            instFields = BeanUtil._GetClassInstanceFields(dst)
-
-            def ObjSetter(obj, k, v):
-                if k in instFields:
-                    # try convert it to proper type
-                    v = BeanUtil._PrimaryTypeConversionFunc(
-                        _dstTypeResolution.getChild(k).getType(), v
-                    )
-                    obj.__setattr__(k, v)
-
-            Setter = ObjSetter
-
-        for k, v in Getter():
+        for k, v in srcOp.getter():
             if option.ignoreNoneInSrc and v is None:
                 continue
-            if BeanUtil._isPrimaryType(type(v)):
-                # try convert it to proper primary type
-                v = BeanUtil._PrimaryTypeConversionFunc(
-                    _dstTypeResolution.getChild(k).getType(), (v)
-                )
-            elif option.recursive:
+            if not dstOp.isSettable(k):
+                continue
+            if option.recursive:
                 # deep copy
-                # try get type info from dstType
-                srcChild = _srcTypeResolution.getChild(k)
-                dstChild = _dstTypeResolution.getChild(k)
-                desiredType = Coalesce(dstChild.getType(), srcChild.getType(), type(v))
-
-                # intercept cuz u said expected
-                if option._expectFullyDictLikeDest and BeanUtil._isCustomStructure(
-                    desiredType
-                ):
-                    desiredType = dict
-                    dstChild = BeanUtil._TypeResolution(desiredType)
-                v = BeanUtil.copyProperties(v, desiredType, option, srcChild, dstChild)
-            Setter(dst, k, v)
+                desiredType = Coalesce(
+                    dstOp.typeInfo(k),
+                    type(v),
+                )
+                v = BeanUtil.copyProperties(v, desiredType, option)
+            dstOp.set(k, v)
         return dst
 
     @staticmethod
-    def toMap(src, option: "BeanUtil.CopyOption" = CopyOption()):
-        option._expectFullyDictLikeDest = True
-        return BeanUtil.copyProperties(src, dict, option)
+    def toJsonCompatible(src):
+        if BeanUtil._isPrimaryType(type(src)):
+            if BeanUtil.isEnum(type(src)):
+                return src.value
+            else:
+                return src
+        elif BeanUtil._isFlatCollection(type(src)):
+            return [BeanUtil.toJsonCompatible(v) for v in src]
+        else:
+            src = BeanUtil.copyProperties(src, dict)
+            return {k: BeanUtil.toJsonCompatible(v) for k, v in src.items()}
 
 
 class Container:
