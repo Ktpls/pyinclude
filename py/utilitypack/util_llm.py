@@ -1,0 +1,104 @@
+from .util_torch import *
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, pipeline
+
+device = getTorchDevice()
+
+
+class LlmApi:
+    def __init__(self, modelName):
+        self.modelName = modelName
+
+    def instruct(self, prompt: str, callback=None): ...
+
+
+try:
+
+    import ollama
+
+    class LlmApiOllama(LlmApi):
+
+        def instruct(self, prompt: str, callback=None):
+            response = ollama.generate(model=self.modelName, prompt=prompt, stream=True)
+            resultJoiner = []
+            for chunk in response:
+                result = chunk["response"]
+                resultJoiner.append(result)
+                if callback:
+                    callback(result)
+            return "".join(resultJoiner)
+
+        def chat(self, prompt: list[dict[str, typing.Any]], callback=None):
+            response = ollama.chat(model=self.modelName, messages=prompt, stream=True)
+            resultJoiner = []
+            for chunk in response:
+                result = chunk["message"]["content"]
+                resultJoiner.append(result)
+                if callback:
+                    callback(result)
+            return "".join(resultJoiner)
+
+except ImportError:
+    ...
+
+
+class LlmApiHuggingface(LlmApi):
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.modelName,
+            # load_in_4bit=True,
+        )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.modelName,
+            # load_in_4bit=True,
+        )
+
+    def applyChatTemplate(self, prompt):
+        return self.tokenizer.apply_chat_template(
+            [
+                {
+                    "role": "system",
+                    "content": "",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
+    def instruct(self, prompt: str, callback=None):
+        if callback:
+            # return pipeline(
+            #     "text-generation",
+            #     model=self.model,
+            #     tokenizer=self.tokenizer,
+            #     device=device,
+            #     stream_complete=True,
+            # )(prompt, callback=callback)
+            print("not support stream")
+        model_inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+        t0 = time.perf_counter()
+        generated_ids = self.model.generate(
+            **model_inputs,
+            max_new_tokens=1024,
+            #     num_beams=3,
+            #     no_repeat_ngram_size=5,
+            #     early_stopping=True,
+        )
+        t1 = time.perf_counter()
+        generated_ids = generated_ids[:, model_inputs["input_ids"].shape[1] :]
+        ret = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+        print(f"time cost {t1-t0:.3f}")
+        ret = ret[0]
+        return ret
+
+
+LLMApiUsing = LlmApiOllama
+
+
+@Singleton
+class Llm(LLMApiUsing): ...

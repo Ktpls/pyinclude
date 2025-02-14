@@ -4,6 +4,7 @@ import unittest
 from utilitypack.cold.util_solid import *
 from utilitypack.util_windows import *
 from utilitypack.util_winkey import *
+from utilitypack.util_cracked import *
 
 
 class RedirectedPrint:
@@ -468,6 +469,27 @@ class BeanUtilTest(unittest.TestCase):
         )
         b2: B = BeanUtil.copyProperties(m, B)
         self.assertEqual(b2.la[1].i, 1)
+
+
+class DataclassInitReorderTest(unittest.TestCase):
+    def test_inherit(self):
+        @dataclasses.dataclass
+        class Parent:
+            x: str = ""  # 默认值
+            y: typing.Any = dataclasses.field(
+                default_factory=lambda: None
+            )  # 使用 default_factory 作为默认值
+
+        # 子类
+        @dataclasses.dataclass
+        class Child(Parent):
+            z: str  # 没有默认值
+
+        child = Child("z", "x", "y")
+        self.assertDictEqual(
+            BeanUtil.toMap(child),
+            {"x": "x", "y": "y", "z": "z"},
+        )
 
 
 unittest.main()
