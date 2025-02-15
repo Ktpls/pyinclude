@@ -960,7 +960,7 @@ class BeanUtil:
     @staticmethod
     def _PrimaryTypeConversionFunc(taipe, obj):
         if taipe is None:
-            taipe = IdentityMapping
+            return obj
         try:
             return taipe(obj)
         except:
@@ -1382,7 +1382,7 @@ def Coalesce(*args):
 
 def mlambda(s: str, _globals=None, _locals=None) -> typing.Callable:
     exp = regex.compile(
-        r"^\s*def\s*(?<paraAndType>.*?):\s*\n?(?<body>.+)$", flags=regex.DOTALL
+        r"^\s*def\s*(?<paraAndType>.*?):\s*?\n?(?<body>.+)$", flags=regex.DOTALL
     )
     match = exp.match(s)
     if not match:
@@ -1677,7 +1677,7 @@ try:
                 match = regex.match(self.exp, s[i:])
                 if match is not None:
                     return FSMUtil.Token(
-                        self.type, match.group(0), i, i + len(match.group(0))
+                        self.type, match.group(0), i, i + len(match.group(0)), match
                     )
                 return None
 
@@ -1687,6 +1687,7 @@ try:
             value: typing.Any
             start: int
             end: int
+            regmatch: regex.Match
 
             def Unexpected(self):
                 raise FSMUtil.ParseError(
