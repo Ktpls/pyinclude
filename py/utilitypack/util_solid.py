@@ -1694,6 +1694,9 @@ try:
                     f"unexpected token {self.value}:{self.type} at {self.start}-{self.end}"
                 )
 
+            def toSection(self):
+                return Section(self.start, self.end)
+
             def viewSection(self, s: str):
                 lineStart = s.rfind("\n", 0, self.start)
                 if lineStart == -1:
