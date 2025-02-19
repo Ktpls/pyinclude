@@ -1,24 +1,4 @@
-import unittest
-
-
-from utilitypack.cold.util_solid import *
-from utilitypack.util_windows import *
-from utilitypack.util_winkey import *
-from utilitypack.util_cracked import *
-
-
-class RedirectedPrint:
-    def clearPrinted(self):
-        self.msg = list()
-
-    def __init__(self):
-        self.clearPrinted()
-
-    def print(self, m):
-        self.msg.append(m)
-
-    def getPrinted(self):
-        return self.msg
+from testcase.autotest_common import *
 
 
 class ExpparserTest(unittest.TestCase):
@@ -490,6 +470,100 @@ class DataclassInitReorderTest(unittest.TestCase):
             BeanUtil.toJsonCompatible(child),
             {"x": "x", "y": "y", "z": "z"},
         )
+
+
+class MlambdaTest(unittest.TestCase):
+    def test_newLined(self):
+        f = mlambda(
+            """
+            def (a, b):
+                c=a+b
+                return c
+            """
+        )
+        ret = f(1, 1)
+        self.assertEqual(ret, 2)
+
+    def test_oneLined(self):
+        f = mlambda("""def (a, b): return a+b""")
+        ret = f(1, 1)
+        self.assertEqual(ret, 2)
+
+
+class SyncExecutableTest(unittest.TestCase):
+    @dataclasses.dataclass
+    class _testbed(Stage):
+        # _testbed, for make it clear to unittest lib that this is not a test case(not startswith('test'))
+        eosm: SyncExecutableManager
+        t: float = 0
+
+        def step(self, dt):
+            self.t += dt
+            self.eosm.step()
+
+    def test_basicUsage(selfTest):
+
+        class ScriptTest(SyncExecutable):
+            def main(self):
+                self.stage: Stage
+
+                def sleep_specified_time(t):
+                    t0 = self.stage.t
+                    self.sleep(t)
+                    selfTest.assertTrue(self.stage.t - t0 >= t)
+
+                sleep_specified_time(3)
+                sleep_specified_time(5)
+                sleep_specified_time(10)
+
+        pool = futures.ThreadPoolExecutor()
+        eosm = SyncExecutableManager(pool)
+        stage = SyncExecutableTest._testbed(eosm)
+        script = ScriptTest(stage, eosm).run()
+        while True:
+            stage.step(1)
+            if script.state == SyncExecutable.STATE.stopped:
+                break
+
+    def test_multiScriptFlow(selfTest):
+        v0 = 0
+        v1 = 1
+        value = v0
+
+        class MainScript(SyncExecutable):
+            # pushes value to v0 for limited times
+            def main(self):
+                nonlocal value
+                self.stage: Stage
+                for i in range(5):
+                    self.sleepUntil(lambda: value != v0)
+                    value = v0
+
+        class FollowerScript(SyncExecutable):
+            # pushes to v1 if main script is alive
+            def main(self, mainScript: MainScript):
+                nonlocal value
+                while True:
+                    value = v1
+                    self.sleepUntil(
+                        lambda: value != v1
+                        or mainScript.state == SyncExecutable.STATE.stopped
+                    )
+                    if mainScript.state == SyncExecutable.STATE.stopped:
+                        break
+
+        pool = futures.ThreadPoolExecutor()
+        eosm = SyncExecutableManager(pool)
+        stage = SyncExecutableTest._testbed(eosm)
+        ms = MainScript(stage, eosm).run()
+        fs = FollowerScript(stage, eosm).run(ms)
+        while True:
+            stage.step(1)
+            if (
+                ms.state == SyncExecutable.STATE.stopped
+                and fs.state == SyncExecutable.STATE.stopped
+            ):
+                break
 
 
 unittest.main()

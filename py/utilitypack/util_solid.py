@@ -729,11 +729,11 @@ class SyncExecutable:
     def main(self, **arg):
         raise NotImplementedError("not implemented")
 
-    def run(self, **arg):
+    def run(self, *a, **kw):
         def foo():
             self.cond.acquire(True)
             try:
-                self.main(**arg)
+                self.main(*a, **kw)
             except BaseException as e:
                 if self.raiseOnErr:
                     traceback.print_exc()
@@ -1677,7 +1677,7 @@ try:
                 match = regex.match(self.exp, s[i:])
                 if match is not None:
                     return FSMUtil.Token(
-                        self.type, match.group(0), i, i + len(match.group(0)), match
+                        self.type, match.group(0), i, i + len(match.group(0))
                     )
                 return None
 
@@ -1687,7 +1687,6 @@ try:
             value: typing.Any
             start: int
             end: int
-            regmatch: regex.Match
 
             def Unexpected(self):
                 raise FSMUtil.ParseError(
