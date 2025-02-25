@@ -1112,7 +1112,7 @@ class BeanUtil:
             dstType = BeanUtil._TypeResolution(dst)
             dst = BeanUtil._GetEmptyInstanceOfClass(dst)
         else:
-            dstType = type(dst)
+            dstType = BeanUtil._TypeResolution(type(dst))
 
         srcOp = BeanUtil.CompatibleStructureOperator(src, srcType.getType())
         dstOp = BeanUtil.CompatibleStructureOperator(dst, dstType.getType())
@@ -1143,17 +1143,25 @@ class BeanUtil:
         return dst
 
     @staticmethod
-    def toJsonCompatible(src):
+    def toJsonCompatible(src, option: "BeanUtil.CopyOption" = CopyOption()):
         if BeanUtil._isPrimaryType(type(src)):
             if BeanUtil.isEnum(type(src)):
                 return src.value
             else:
                 return src
         elif BeanUtil._isFlatCollection(type(src)):
-            return [BeanUtil.toJsonCompatible(v) for v in src]
+            return [
+                BeanUtil.toJsonCompatible(v, option)
+                for v in src
+                if option.ignoreNoneInSrc and v is not None
+            ]
         else:
             src = BeanUtil.copyProperties(src, dict)
-            return {k: BeanUtil.toJsonCompatible(v) for k, v in src.items()}
+            return {
+                k: BeanUtil.toJsonCompatible(v, option)
+                for k, v in src.items()
+                if option.ignoreNoneInSrc and v is not None
+            }
 
 
 class Container:
@@ -1646,6 +1654,55 @@ def NormalizeCrlf(s: str):
     return s.replace("\r\n", "\n").replace("\r", "\n")
 
 
+class Profiling:
+    class Persister:
+        def __init__(self): ...
+        def write(self, group, item, value): ...
+        def flush(self): ...
+    class PersisterInMemory(Persister):
+
+        def getPath(self):
+            return os.path.join(os.getcwd(), "profiling.log")
+
+        def __init__(self):
+            self.data: dict[tuple, list[float]] = dict()
+            path = self.getPath()
+            if os.path.exists(path):
+                try:
+                    self.data = json.loads(ReadTextFile(path))
+                except:
+                    pass
+
+        def write(self, group, item, value):
+            k = f"{group}:{item}"
+            if k not in self.data:
+                self.data[k] = list()
+            else:
+                self.data[k].append(value)
+
+        def flush(self):
+            WriteTextFile(self.getPath(), json.dumps(self.data))
+
+    def __init__(self):
+        self.persister = Profiling.PersisterInMemory()
+
+    def __del__(self):
+        self.persister.flush()
+
+    def profiling(self, group, item):
+        def toGetF(f):
+            @functools.wraps(f)
+            def newF(*a, **kw):
+                ps = perf_statistic(True)
+                f(*a, **kw)
+                cost = ps.stop().time()
+                self.persister.write(group, item, cost)
+
+            return newF
+
+        return toGetF
+
+
 ################################################
 ################# not so solid #################
 ################################################
@@ -1840,6 +1897,7 @@ try:
             port = "port"
             folder = "folder"
             fileName = "fileName"
+            fileBaseName = "fileBaseName"
             extName = "extName"
 
         def _ReadOrCalculate(self, name):
@@ -1861,6 +1919,7 @@ try:
                 elif name in [
                     UrlFullResolution._Scopes.folder,
                     UrlFullResolution._Scopes.fileName,
+                    UrlFullResolution._Scopes.fileBaseName,
                     UrlFullResolution._Scopes.extName,
                 ]:
                     self._parseStepPath()
@@ -1889,6 +1948,7 @@ try:
         port = _scope(_Scopes.port)
         folder = _scope(_Scopes.folder)
         fileName = _scope(_Scopes.fileName)
+        fileBaseName = _scope(_Scopes.fileBaseName)
         extName = _scope(_Scopes.extName)
 
         class RegPool:
@@ -1897,7 +1957,7 @@ try:
             )
             host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
             path = regex.compile(
-                r"^(?<folder>.*?)(?:/(?<fileName>[^/]+?(?<extName>\..*)?))?$"
+                r"^(?<folder>.*?)(?:/(?<fileName>(?<fileBaseName>[^/]+?)(?<extName>\..*)?))?$"
             )
 
         class UnexpectedException(Exception): ...
@@ -1971,15 +2031,16 @@ try:
                     ]
                 ]
             ):
-                folder, fileName, extName = [None] * 3
+                folder, fileName, fileBaseName, extName = [None] * 4
                 if self.path is not None:
                     matchPath = UrlFullResolution.RegPool.path.match(self.path)
                     if matchPath is not None:
-                        folder, fileName, extName = matchPath.group(
-                            "folder", "fileName", "extName"
+                        folder, fileName, fileBaseName, extName = matchPath.group(
+                            "folder", "fileName", "fileBaseName", "extName"
                         )
                 self._SetScope(UrlFullResolution._Scopes.folder, folder)
                 self._SetScope(UrlFullResolution._Scopes.fileName, fileName)
+                self._SetScope(UrlFullResolution._Scopes.fileBaseName, fileBaseName)
                 self._SetScope(UrlFullResolution._Scopes.extName, extName)
 
         def calcAll(self):

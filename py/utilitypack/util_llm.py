@@ -1,5 +1,11 @@
 from .util_torch import *
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, pipeline
+from transformers import (
+    AutoTokenizer,
+    AutoModel,
+    AutoModelForCausalLM,
+    pipeline,
+    DynamicCache,
+)
 
 device = getTorchDevice()
 
@@ -42,9 +48,12 @@ except ImportError:
 
 
 class LlmApiHuggingface(LlmApi):
+    ModelDir = None
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
+        if self.ModelDir is not None:
+            self.modelName = os.path.join(self.ModelDir, self.modelName)
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.modelName,
             # load_in_4bit=True,
@@ -94,6 +103,35 @@ class LlmApiHuggingface(LlmApi):
         ret = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         print(f"time cost {t1-t0:.3f}")
         ret = ret[0]
+        return ret
+
+    def instruct_stream(self, prompt: str, callback=None):
+        model_inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+        tokens = model_inputs["input_ids"]
+        t0 = time.perf_counter()
+        kv = DynamicCache()
+        tkBuf = ""
+        while True:
+            out = self.model(
+                input_ids=tokens,
+                past_key_values=kv,
+                use_cache=True,
+            )
+            next_token = torch.multinomial(
+                torch.softmax(out.logits[0, -1, :], dim=-1), 1
+            ).item()
+            kv = out.past_key_values
+
+            if callback:
+                tk = self.tokenizer.decode([next_token], skip_special_tokens=True)
+                tkBuf += tk
+                callback(tk)
+            if next_token == self.model.config.eos_token_id:
+                break
+            tokens = torch.tensor([[next_token]]).to(tokens.device)
+        t1 = time.perf_counter()
+        print(f"time cost {t1-t0:.3f}")
+        ret = tkBuf
         return ret
 
 
