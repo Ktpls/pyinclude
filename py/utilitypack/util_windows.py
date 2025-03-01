@@ -766,7 +766,8 @@ class WifiRefresher:
     def __getNowWlanProfileName():
         output = subprocess.check_output(
             "netsh wlan show interface", shell=True
-        ).decode("GBK")
+        )
+        output=output.decode("utf8")
         m = regex.findall(
             r"(?<=^\s*SSID\s*:\s)(.+?)(?=\s*$)", output, flags=regex.MULTILINE
         )

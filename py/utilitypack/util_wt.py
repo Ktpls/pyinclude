@@ -190,7 +190,7 @@ class Port8111:
         driver_state: float = None
 
     @dataclasses.dataclass
-    class BeanMapInfo:
+    class BeanMapInfo(ValidBean):
         grid_size: list[float] = None
         grid_steps: list[float] = None
         grid_zero: list[float] = None

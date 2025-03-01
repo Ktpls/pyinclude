@@ -10,6 +10,7 @@ import itertools
 import math
 import multiprocessing
 import os
+import pprint
 import random
 import re
 import sys
@@ -223,6 +224,9 @@ def AllFileIn(
     return ret
 
 
+UTS_DEFAULT_THREAD_POOL = futures.ThreadPoolExecutor()
+
+
 class StoppableSomewhat:
     class StrategyRunOnRunning(enum.Enum):
         # ignore = 0
@@ -308,9 +312,7 @@ class StoppableThread(StoppableSomewhat):
         super().__init__(strategy_runonrunning, strategy_error)
         self.running: bool = False
         self.stopsignal: bool = True
-        self.pool: futures.ThreadPoolExecutor = Coalesce(
-            pool, futures.ThreadPoolExecutor()
-        )
+        self.pool: futures.ThreadPoolExecutor = Coalesce(pool, UTS_DEFAULT_THREAD_POOL)
         self.submit = None
         self.result = None
 
@@ -702,6 +704,10 @@ class SyncExecutableManager:
             se.cond.release()
 
     def submit(self, se: "SyncExecutable", foo: typing.Callable):
+        # dont call this manually
+        # do like:
+        # se=[SomeClassInheritsSyncExecutable](stage, sem)
+        # se.run()
         self.selist.append(se)
         return self.pool.submit(foo)
 
@@ -1232,13 +1238,28 @@ def FlipCoin() -> bool:
     return InProbability(0.5)
 
 
-@EasyWrapper
+# @EasyWrapper
 def Singleton(cls):
+    '''
+    known issue
+        say if u have two classes with inheritance:
+            @Singleton
+            class Parent:
+                def __init__(self):
+                    print("Parent init")
+            
+            @Singleton
+            class Child(Parent):
+                def __init__(self):
+                    super(Parent, self).__init__()
+                    print("Child init")
+            the __new__ of Parent wont be working as what object.__new__ does
+    '''
     cls.__singleton_instance__ = None
     cls.__oldNew__ = cls.__new__
     cls.__oldInit__ = cls.__init__
 
-    def newNew(cls, *args, **kwargs):
+    def newNew(the_calling_cls_i_dont_care, *args, **kwargs):
         if cls.__singleton_instance__ is None:
             instance = cls.__oldNew__(cls)
             cls.__oldInit__(instance, *args, **kwargs)

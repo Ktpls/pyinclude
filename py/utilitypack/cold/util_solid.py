@@ -6,8 +6,6 @@ solid
 EPS = 1e-10
 
 
-
-
 def UnfinishedWrapper(msg=None) -> typing.Callable[..., typing.Any]:
     if callable(msg):
         # calling without parens, works both on a class and a function
@@ -27,7 +25,6 @@ def UnfinishedWrapper(msg=None) -> typing.Callable[..., typing.Any]:
     return f2
 
 
-
 class Logger:
     def __init__(self, path):
         self.path = path
@@ -39,7 +36,7 @@ class Logger:
 
     def log(self, content):
         self.f.write((str(content) + "\n").encode("utf8"))
-        # self.f.flush()
+        self.f.flush()
 
     def __del__(self):
         self.f.close()
@@ -259,7 +256,6 @@ def WrapperOfMultiLineText(s):
     ${threeQuotes})
     """
     return s[1:-1]
-
 
 
 def printAndRet(val):
@@ -1075,6 +1071,72 @@ try:
             "false": False,
             "none": None,
         }
+
+    class WrltDiscussLikeParser:
+        indentedLineRegex = r"^(?<ind>\t*)(?<content>[^\n]*)\n?"
+
+        @dataclasses.dataclass
+        class Elm:
+            level: int
+            content: str = None
+            children: list["WrltDiscussLikeParser.Elm"] = dataclasses.field(
+                default_factory=list
+            )
+
+            @staticmethod
+            def of(s: str):
+                mat = regex.match(WrltDiscussLikeParser.indentedLineRegex, s)
+                assert mat is not None
+                return WrltDiscussLikeParser.Elm(
+                    len(mat.group("ind")), mat.group("content")
+                )
+
+        class _TokenType(enum.Enum):
+            indentedLine = 1
+            eof = 2
+            unexpected = 3
+
+        _tokenizer = [
+            FSMUtil.RegexpTokenMatcher(r"^$", _TokenType.eof),
+            FSMUtil.RegexpTokenMatcher(indentedLineRegex, _TokenType.indentedLine),
+            FSMUtil.RegexpTokenMatcher(r"^.", _TokenType.unexpected),
+        ]
+
+        class _Node(enum.Enum):
+            start = 1
+
+        def getAst(self, s: str):
+            s = NormalizeCrlf(s)
+            node = self._Node.start
+            pltk = FSMUtil.PeekableLazyTokenizer(s, self._tokenizer)
+            ast = WrltDiscussLikeParser.Elm(-1)
+            curNodePath: list[WrltDiscussLikeParser.Elm] = [ast]
+            while True:
+                token = pltk.next()
+                match node:
+                    case self._Node.start:
+                        match token.type:
+                            case self._TokenType.indentedLine:
+                                curNode = curNodePath[-1]
+                                newElm = WrltDiscussLikeParser.Elm.of(token.value)
+                                ind = newElm.level
+                                if ind > curNode.level:
+                                    curNode.children.append(newElm)
+                                    curNodePath.append(newElm)
+                                elif ind == curNode.level:
+                                    curNodePath[-2].children.append(newElm)
+                                    curNodePath[-1] = newElm
+                                elif ind < curNode.level:
+                                    while curNodePath[-1].level >= ind:
+                                        curNodePath.pop()
+                                    curNodePath[-1].children.append(newElm)
+                                    curNodePath.append(newElm)
+                                node = self._Node.start
+                            case self._TokenType.eof:
+                                break
+                            case self._TokenType.unexpected:
+                                raise Exception("unexpected token")
+            return ast
 
 except ImportError:
     pass
