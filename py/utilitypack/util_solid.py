@@ -353,6 +353,7 @@ class StoppableThread(StoppableSomewhat):
                 self.result = self.foo(*arg, **kw)
             except Exception as e:
                 if self.strategy_error == StoppableThread.StrategyError.raise_error:
+                    self.running = False
                     raise e
                 elif self.strategy_error == StoppableThread.StrategyError.print_error:
                     traceback.print_exc()
@@ -680,36 +681,34 @@ class SyncExecutableManager:
     def __init__(self, pool: futures.ThreadPoolExecutor) -> None:
         self.pool = pool
         self.selist: list[SyncExecutable] = []
+        self.executionLock = threading.Lock()
+
+    def GiveExecutionPrivilegeToSe(self, se: "SyncExecutable"):
+        # consider wait asyncly here and below
+        se.cond.notify_all()
+        se.cond.wait()
 
     def step(self):
         # call this on wolf update
-        # make sure set running before submitting. or would be possibly kicked out here
+        # make sure setting running before submitting. or would be possibly kicked out here
+        self.executionLock.acquire()
+
         self.selist = [
             e for e in self.selist if e.state != SyncExecutable.STATE.stopped
         ]
         for se in self.selist:
-            se.cond.acquire(True)
-            if se.state == SyncExecutable.STATE.suspended:
+            if se.state == SyncExecutable.STATE.waitingCondition:
                 # knowing not satisfied, skip waking up
-                if se.waitWhat():
-                    se.cond.notify_all()
-                    se.cond.wait()  # consider wait asyncly here and below
+                if se.waitCondition():
+                    self.GiveExecutionPrivilegeToSe(se)
             elif se.state == SyncExecutable.STATE.running:
-                se.cond.notify_all()
-                se.cond.wait()
+                self.GiveExecutionPrivilegeToSe(se)
             elif se.state == SyncExecutable.STATE.stopped:
                 pass
             else:
                 pass
-            se.cond.release()
 
-    def submit(self, se: "SyncExecutable", foo: typing.Callable):
-        # dont call this manually
-        # do like:
-        # se=[SomeClassInheritsSyncExecutable](stage, sem)
-        # se.run()
-        self.selist.append(se)
-        return self.pool.submit(foo)
+        self.executionLock.release()
 
 
 class SyncExecutable:
@@ -718,41 +717,51 @@ class SyncExecutable:
     class STATE(enum.Enum):
         stopped = 0
         running = 1
-        suspended = 2
+        waitingCondition = 2
 
     def __init__(
         self, stage: Stage, sem: SyncExecutableManager, raiseOnErr=True
     ) -> None:
         self.stage = stage
         self.sem = sem
-        self.cond = threading.Condition()
+        self.cond = threading.Condition(sem.executionLock)
         self.state = self.STATE.stopped
         self.future = None
         self.raiseOnErr = raiseOnErr
-        self.waitWhat = None
+        self.waitCondition = None
 
     # override
     def main(self, **arg):
         raise NotImplementedError("not implemented")
 
+    def confirmExecutionPrivilege(self):
+        self.cond.acquire(True)
+    
+    def giveAwayExecutionPrivilege(self):
+        self.cond.notify_all()
+        self.cond.wait()
+
+    def exitExecution(self):
+        self.cond.notify_all()  # no more sleep, aks sem to get up
+        self.cond.release()
+
     def run(self, *a, **kw):
         def foo():
-            self.cond.acquire(True)
             try:
+                self.confirmExecutionPrivilege()
                 self.main(*a, **kw)
-            except BaseException as e:
+            except Exception as e:
+                traceback.print_exc()
                 if self.raiseOnErr:
-                    traceback.print_exc()
                     raise e
-                else:
-                    traceback.print_exc()
-            self.state = self.STATE.stopped
-            self.cond.notify_all()  # no more sleep, aks sem to get up
-            self.cond.release()
+            finally:
+                self.state = self.STATE.stopped
+                self.exitExecution()
 
         if not self.isworking():
             self.state = self.STATE.running
-            self.future = self.sem.submit(self, foo)
+            self.future = self.sem.pool.submit(foo)
+            self.sem.selist.append(self)
         return self
 
     # available in main
@@ -762,19 +771,13 @@ class SyncExecutable:
         def untilWhatOrTimeOut():
             return untilWhat() or (overduetime and self.stage.t >= overduetime)
 
-        # give right of check to manager, so can i save cost of thread switching
-        self.waitWhat = untilWhatOrTimeOut
-        self.state = self.STATE.suspended
+        self.waitCondition = untilWhatOrTimeOut
+        self.state = self.STATE.waitingCondition
         while True:
-            """
-            do this in main thread so cancelling thread switching cost
-            """
             if untilWhatOrTimeOut():
                 break
-            # register
-            self.cond.notify_all()
-            self.cond.wait()
-        self.waitWhat = None
+            self.giveAwayExecutionPrivilege()
+        self.waitCondition = None
         self.state = self.STATE.running
 
     # available in main
@@ -783,8 +786,12 @@ class SyncExecutable:
 
     # available in main
     def stepOneFrame(self):
-        self.cond.notify_all()
-        self.cond.wait()
+        # buggy
+        self.waitCondition = lambda :True
+        self.state = self.STATE.waitingCondition
+        self.giveAwayExecutionPrivilege()
+        self.waitCondition = None
+        self.state = self.STATE.running
 
     def isworking(self):
         return self.state != self.STATE.stopped
@@ -1240,21 +1247,21 @@ def FlipCoin() -> bool:
 
 # @EasyWrapper
 def Singleton(cls):
-    '''
+    """
     known issue
         say if u have two classes with inheritance:
             @Singleton
             class Parent:
                 def __init__(self):
                     print("Parent init")
-            
+
             @Singleton
             class Child(Parent):
                 def __init__(self):
                     super(Parent, self).__init__()
                     print("Child init")
             the __new__ of Parent wont be working as what object.__new__ does
-    '''
+    """
     cls.__singleton_instance__ = None
     cls.__oldNew__ = cls.__new__
     cls.__oldInit__ = cls.__init__
@@ -1511,7 +1518,8 @@ def BiptrFindSection(x, section):
     """
     assumes sections are sorted
     returns index i so that section[i]<=x<section[i+1]
-    if x<section[0] or x>=section[-1], returns -1 or len(section)-1
+    if x<section[0], returns -1
+    if x>=section[-1], returns len(section)-1
     """
     beg = 0
     end = len(section)
@@ -1521,17 +1529,16 @@ def BiptrFindSection(x, section):
         return -1
     if x >= section[-1]:
         return len(section) - 1
-    mid = beg
-    while beg < end:
+    while beg + 1 < end:
         mid = (beg + end) // 2
         if x < section[mid]:
             end = mid
         elif x > section[mid]:
-            beg = mid + 1
+            beg = mid
         else:  # x==section[mid]
+            beg = mid
             break
-    mid = (beg + end) // 2
-    return mid
+    return beg
 
 
 class TaskScheduler:
@@ -1609,15 +1616,30 @@ class GSLogger:
 
     DefaultGlobalSysLoggerName = "GLOBAL_SYS_LOGGER"
 
+    def _InnerLoggerShorthand(name):
+        def shortHand(self, msg, *a, **kw):
+            getattr(self.logger, name)(msg, *a, **kw)
+
+        return shortHand
+
+    debug = _InnerLoggerShorthand("debug")
+    info = _InnerLoggerShorthand("info")
+    warning = _InnerLoggerShorthand("warning")
+    error = _InnerLoggerShorthand("error")
+    critical = _InnerLoggerShorthand("critical")
+
     class Handlers:
         @staticmethod
         def ConsoleHandler():
             return logging.StreamHandler()
 
+        FileHandlerDefaultPath = "asset/log/"
+
         @staticmethod
-        def FileHandler(logFilePath="asset/log/"):
+        def FileHandler(fileName=None, logFilePath=None):
+            fileName = fileName or f"{datetime.now().strftime('%Y-%m-%d')}.log"
+            logFilePath = logFilePath or GSLogger.Handlers.FileHandlerDefaultPath
             EnsureDirectoryExists(logFilePath)
-            fileName = f"{datetime.now().strftime('%Y-%m-%d')}.log"
             return logging.FileHandler(os.path.join(logFilePath, fileName))
 
     def __init__(self, handlers: list[logging.Handler] = None):
@@ -1643,7 +1665,7 @@ class GSLogger:
                 return f(*args, **kwargs)
             except BaseException as err:
                 if isinstance(err, execType):
-                    GSLogger().logger.exception(err)
+                    GSLogger().error(err)
                 raise err
 
         return f2
@@ -1656,7 +1678,7 @@ class GSLogger:
         def f2(*args, **kwargs):
             stt = SingleSectionedTimer(True)
             ret = f(*args, **kwargs)
-            GSLogger().logger.info(f"time cost of {f.__name__}: {stt.get()}")
+            GSLogger().info(f"time cost of {f.__name__}: {stt.get()}")
             return ret
 
         return f2
@@ -1724,6 +1746,11 @@ class Profiling:
         return toGetF
 
 
+class ParamValueUnset:
+    # placeholder for param unset, use when None is a meaningful param
+    ...
+
+
 ################################################
 ################# not so solid #################
 ################################################
@@ -1738,6 +1765,8 @@ try:
         class TokenTypeLike(enum.Enum): ...
 
         class TokenMatcher:
+            # s here is actually a substring of the original string[i:]
+            # i is not used to cut s again here
             def tryMatch(
                 self, s: str, i: int
             ) -> typing.Union[None, "FSMUtil.Token"]: ...
@@ -1752,7 +1781,7 @@ try:
                     self.exp = regex.compile(self.exp, flags=regex.DOTALL)
 
             def tryMatch(self, s: str, i: int) -> "None | FSMUtil.Token":
-                match = regex.match(self.exp, s[i:])
+                match = regex.match(self.exp, s)
                 if match is not None:
                     return FSMUtil.Token(
                         self.type, match.group(0), i, i + len(match.group(0))
@@ -1766,10 +1795,19 @@ try:
             start: int
             end: int
 
-            def Unexpected(self):
-                raise FSMUtil.ParseError(
-                    f"unexpected token {self.value}:{self.type} at {self.start}-{self.end}"
-                )
+            def Unexpected(self, s=None):
+                lineNo = None
+                if s is not None:
+                    # provide line No information
+                    lineStartPos = [
+                        m.end() for m in regex.finditer(r"^", s, regex.MULTILINE)
+                    ]
+                    lineNo = BiptrFindSection(self.start, lineStartPos)
+                msg = ""
+                msg += f'unexpected token "{self.value}":{self.type} at {self.start}-{self.end}'
+                if lineNo is not None:
+                    msg += f"\n at line {lineNo+1}"
+                raise FSMUtil.ParseError(msg)
 
             def toSection(self):
                 return Section(self.start, self.end)
@@ -1801,8 +1839,9 @@ try:
             i: int,
             matchers: list["FSMUtil.TokenMatcher"],
         ) -> "FSMUtil.Token":
+            sAfterI = s[i:]
             for m in matchers:
-                token = m.tryMatch(s, i)
+                token = m.tryMatch(sAfterI, i)
                 if token is not None:
                     return token
             sectionEnd = min(i + 10, len(s))

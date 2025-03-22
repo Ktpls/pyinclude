@@ -525,45 +525,108 @@ class SyncExecutableTest(unittest.TestCase):
             if script.state == SyncExecutable.STATE.stopped:
                 break
 
-    def test_multiScriptFlow(selfTest):
-        v0 = 0
-        v1 = 1
-        value = v0
+    class ConsumerProducer:
+
+        @dataclasses.dataclass
+        class Production:
+            value: int
+
+            def consume(self):
+                self.value -= 1
+
+            def produce(self):
+                self.value += 1
+
+            def isEmpty(self):
+                return self.value == 0
+
+            def isConsumable(self):
+                return not self.isEmpty()
 
         class MainScript(SyncExecutable):
-            # pushes value to v0 for limited times
-            def main(self):
-                nonlocal value
-                self.stage: Stage
-                for i in range(5):
-                    self.sleepUntil(lambda: value != v0)
-                    value = v0
+            # consumes production by 1, limited times
+            def main(
+                self,
+                production: "SyncExecutableTest.ConsumerProducer.Production",
+                times: int,
+            ):
+                for i in range(times):
+                    self.sleepUntil(lambda: production.isConsumable())
+                    production.consume()
 
-        class FollowerScript(SyncExecutable):
-            # pushes to v1 if main script is alive
-            def main(self, mainScript: MainScript):
-                nonlocal value
+        class ProducerScript(SyncExecutable):
+            # produce production by 1 if main script is alive
+            def main(
+                self,
+                production: "SyncExecutableTest.ConsumerProducer.Production",
+                mainScript: "SyncExecutableTest.ConsumerProducer.MainScript",
+            ):
                 while True:
-                    value = v1
                     self.sleepUntil(
-                        lambda: value != v1
+                        lambda: production.isEmpty()
                         or mainScript.state == SyncExecutable.STATE.stopped
                     )
                     if mainScript.state == SyncExecutable.STATE.stopped:
                         break
+                    production.produce()
 
+    def test_multiScriptFlow(selfTest):
+        production = SyncExecutableTest.ConsumerProducer.Production(0)
         pool = futures.ThreadPoolExecutor()
         eosm = SyncExecutableManager(pool)
         stage = SyncExecutableTest._testbed(eosm)
-        ms = MainScript(stage, eosm).run()
-        fs = FollowerScript(stage, eosm).run(ms)
+        ms = SyncExecutableTest.ConsumerProducer.MainScript(stage, eosm).run(
+            production, 5
+        )
+        ps = SyncExecutableTest.ConsumerProducer.ProducerScript(stage, eosm).run(
+            production, ms
+        )
         while True:
             stage.step(1)
             if (
                 ms.state == SyncExecutable.STATE.stopped
-                and fs.state == SyncExecutable.STATE.stopped
+                and ps.state == SyncExecutable.STATE.stopped
             ):
                 break
+
+    def test_LaunchThreadInThread(selfTest):
+        pool = futures.ThreadPoolExecutor()
+        eosm = SyncExecutableManager(pool)
+        stage = SyncExecutableTest._testbed(eosm)
+        records = list()
+
+        class MainScriptLauchingThreadFromInside(SyncExecutable):
+            def main(self, iteration: int):
+                recorderStopSignal = False
+                value = 0
+
+                class RecorderScript(SyncExecutable):
+
+                    def main(selfr):
+
+                        def record():
+                            if len(records) == 0 or records[-1] != value:
+                                records.append(value)
+
+                        while True:
+                            if recorderStopSignal:
+                                break
+                            record()
+                            selfr.stepOneFrame()
+
+                recorder = RecorderScript(stage, eosm).run()
+                for i in range(iteration):
+                    value = i
+                    self.sleep(1)
+                recorderStopSignal = True
+                self.stepOneFrame()
+
+        ms = MainScriptLauchingThreadFromInside(stage, eosm).run(5)
+        while True:
+            stage.step(0.1)
+            if ms.state == SyncExecutable.STATE.stopped:
+                break
+        pass
 
 
 unittest.main()

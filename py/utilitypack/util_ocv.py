@@ -8,43 +8,39 @@ opencv
 import cv2 as cv
 
 
-def savemat(m, name=None, path=None, autorename=True):
-    if path is None:
-        path = r"./output/"
-    defaultName = "unnamed"
-    defaultSuffix = ".png"
-    if name is None:
-        name = defaultName + defaultSuffix
-    namesplit = os.path.splitext(name)
-    name, suffix = str(namesplit[0]), str(namesplit[1])
-    if len(suffix) == 0:
-        suffix = defaultSuffix
+def savemat(m, name=None, ext=None, path=None, autorename=True):
+    name = name or "unnamed"
+    ext = ext or "png"
+    path = path or r"./output/"
 
     if not os.path.exists(path):
         os.makedirs(path)
-    totalpath = os.path.join(path, name + suffix)
+    totalpath = os.path.join(path, f"{name}.{ext}")
     # find suitable name
     if autorename and os.path.exists(totalpath):
         suffix_idx = 0
         while True:
-            suffix_idx += 1
-            newname = "{}-{}".format(name, suffix_idx)
-            totalpath = os.path.join(path, newname + suffix)
+            totalpath = os.path.join(path, f"{name}-{suffix_idx}.{ext}")
             if not os.path.exists(totalpath):
                 break
+            suffix_idx += 1
 
     if not cv.imwrite(totalpath, m):
         raise IOError(f"Bad write {totalpath}")
 
+def CvNormalize_Copy(src: cv.typing.MatLike, alpha: float = ..., beta: float = ..., norm_type: int = ..., dtype: int = None, mask: cv.typing.MatLike | None = None):
+    dst=np.zeros_like(src)
+    cv.normalize(src, dst, alpha, beta, norm_type, dtype, mask)
+    return dst
 
-def savematn(m: np.ndarray, name=None, path=None):
-    mtmp = m.copy()
-    cv.normalize(mtmp, mtmp, 0, 255, cv.NORM_MINMAX)
-    savemat(mtmp, name, path)
+def savematn(m: np.ndarray, name=None, ext=None, path=None, autorename=True):
+    mtmp = np.zeros_like(m)
+    cv.normalize(m, mtmp, 0, 255, cv.NORM_MINMAX)
+    savemat(mtmp, name, ext, path, autorename)
 
 
-def savematflt(m, multiplier=255, name=None, path=None):
-    savemat(multiplier * m, name, path)
+def savematflt(m, multiplier=255, name=None, ext=None, path=None, autorename=True):
+    savemat(multiplier * m, name, ext, path, autorename)
 
 
 def normalizeMask(mask: np.ndarray, expectedShape: tuple[int, ...]) -> np.ndarray:

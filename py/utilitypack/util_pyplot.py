@@ -32,9 +32,13 @@ class nestedPyPlot:
 
 
 class MassivePicturePlot:
+    @staticmethod
+    def SquarePlotShape(plotNum):
+        return [int(np.ceil(np.sqrt(plotNum)))] * 2
+
     def __init__(self, plotShape, fig=None):
         self.plotShape = plotShape
-        self.fig = fig if fig else plt.figure(figsize=(20, 20))
+        self.fig = fig if fig else plt.figure(figsize=5 * np.array(plotShape))
         self.i = 1
 
     def toNextPlot(self) -> plt.Axes:
