@@ -1,9 +1,18 @@
 import os
+from utilitypack.util_solid import *
 
 
 class Builder:
-    imgName: str
-    containerName: str
+    imgName: str = None
+    containerName: str = None
+    port: dict[str, str] = None
+    mount: dict[str, str] = None
+    env: dict[str, str] = None
+    network: list[str] = None
+    runArg: list[str] = None
+    docker_file_dir: str = None
+    docker_compose_dir: str = None
+    img_file_name: str = "image.tar"
 
     def __init__(self):
         self.cwd = os.getcwd()
@@ -27,30 +36,20 @@ class Builder:
     def _toDir(self, path):
         os.chdir(self.cwd), os.chdir(path)
 
-    @CwdProtected
-    def generateDockerCompose(self):
-        self._toDir("docker")
-        os.system("python generate_docker_compose")
+    def build(self):
+        os.system(f"docker build -t {self.imgName} {self.docker_file_dir}")
         return self
 
     @CwdProtected
-    def build(self, root_dir: str = None):
-        if root_dir:
-            self._toDir(root_dir)
-        os.system(f"docker build -t {self.imgName} .")
-        return self
-
-    @CwdProtected
-    def recompose(self, docker_compose_dir: str = None):
-        if docker_compose_dir:
-            self._toDir(docker_compose_dir)
+    def recompose(self):
+        if self.docker_compose_dir:
+            self._toDir(self.docker_compose_dir)
         os.system("docker compose down")
         os.system("docker compose up -d")
         return self
 
-    def export(self, fileName: str = None):
-        fileName = fileName or "image.tar"
-        os.system(f"docker save -o {fileName} {self.imgName}")
+    def export(self):
+        os.system(f"docker save -o {self.img_file_name} {self.imgName}")
         return self
 
     def stopcontainer(self):
@@ -67,22 +66,21 @@ class Builder:
             pass
         return self
 
-    def run(
-        self,
-        port: dict[str, str] = None,
-        mount: dict[str, str] = None,
-        env: dict[str, str] = None,
-    ):
+    def run(self):
         params = [
             f"-it -d --name {self.containerName}",
         ]
-        if port:
-            params.extend([f"-p {k}:{v}" for k, v in port.items()])
-        if mount:
-            params.extend([f"-v {k}:{v}" for k, v in mount.items()])
-        if env:
-            params.extend([f"-e {k}={v}" for k, v in env.items()])
+        if self.port:
+            params.extend([f"-p {k}:{v}" for k, v in self.port.items()])
+        if self.mount:
+            params.extend([f"-v {k}:{v}" for k, v in self.mount.items()])
+        if self.env:
+            params.extend([f"-e {k}={v}" for k, v in self.env.items()])
+        if self.network:
+            params.extend([f"--network {v}" for v in self.network])
         params.append(f"{self.imgName}")
+        if self.runArg:
+            params.extend(self.runArg)
 
         cmd = " ".join(params)
         cmd = f"docker run {cmd}"
@@ -91,4 +89,59 @@ class Builder:
 
     def restart(self):
         os.system(f"docker restart {self.containerName}")
+        return self
+
+    def preproc_pd(self, files: list[str | tuple[str, str]], pdenv: dict = None):
+        """
+        预处理PowerDefine模板文件
+
+        Args:
+            files: 需要处理的文件列表，支持两种格式：
+                - str: 文件路径 (自动提取扩展名)
+                - tuple[str, str]: (文件路径, 指定扩展名)
+                支持扩展名: yaml/yml/py/c/cpp/asm
+                示例: ["config.yml", ("src/main", "c"), "kernel.asm"]
+
+            pdenv: PowerDefine环境变量字典，用于模板预处理
+                示例: {"DEBUG_MODE": "1", "MAX_THREADS": "4"}
+
+        Returns:
+            self: 支持方法链式调用
+
+        Note:
+            - 会直接修改原始文件内容
+            - 文件扩展名必须在支持列表中
+            - 使用UrlFullResolution解析文件路径
+        """
+        from powerDefine import (
+            YamlFrontEnd,
+            PythonFrontEnd,
+            CLikeFrontEnd,
+            AsmFrontEnd,
+            PowerDefineBlockParser,
+            PowerDefineEnviroment,
+        )
+
+        front_end_mapping = {
+            "yaml": YamlFrontEnd,
+            "yml": YamlFrontEnd,
+            "py": PythonFrontEnd,
+            "c": CLikeFrontEnd,
+            "cpp": CLikeFrontEnd,
+            "asm": AsmFrontEnd,
+        }
+        for p in files:
+            if isinstance(p, (tuple, list)):
+                p, extName = p
+            else:
+                extName = UrlFullResolution.of(p).extName
+            assert extName in front_end_mapping
+            pd_cwd = UrlFullResolution.of(p).folder
+            pde = PowerDefineEnviroment(env=pdenv, cwd=pd_cwd)
+            pdbp = PowerDefineBlockParser(pde)
+            fe = front_end_mapping[extName](pdbp)
+            s = ReadTextFile(p)
+            s = fe.preproc(s)
+            WriteTextFile(p, s)
+            print(f"File edited: {p}")
         return self

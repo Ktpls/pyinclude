@@ -1,30 +1,30 @@
-import concurrent.futures as futures
 from datetime import datetime
+import concurrent.futures
 import copy
 import ctypes
 import dataclasses
 import enum
 import functools
+import heapq
 import inspect
 import itertools
+import json
+import logging
 import math
 import multiprocessing
 import os
 import pprint
+import queue
 import random
 import re
 import sys
 import threading
 import time
 import traceback
+import types
 import typing
 import uuid
-import json
 import zipfile
-import heapq
-import queue
-import logging
-import types
 
 """
 solid
@@ -56,7 +56,8 @@ def FloatEq(a, b, eps=1e-6):
     return abs(a - b) < eps
 
 
-IdentityMapping = lambda x: x
+def IdentityMapping(x):
+    return x
 
 
 def BetterGroupBy(l: list, pred):
@@ -224,7 +225,7 @@ def AllFileIn(
     return ret
 
 
-UTS_DEFAULT_THREAD_POOL = futures.ThreadPoolExecutor()
+UTS_DEFAULT_THREAD_POOL = concurrent.futures.ThreadPoolExecutor()
 
 
 class StoppableSomewhat:
@@ -298,6 +299,7 @@ class StoppableSomewhat:
 
 
 class StoppableThread(StoppableSomewhat):
+    # TODO merge with StoppableSomewhat, cuz StoppableProcess is no longer existed
     """
     derivate from it and override foo()
     """
@@ -307,12 +309,14 @@ class StoppableThread(StoppableSomewhat):
         self,
         strategy_runonrunning: "StoppableSomewhat.StrategyRunOnRunning" = None,
         strategy_error: "StoppableSomewhat.StrategyError" = None,
-        pool: futures.ThreadPoolExecutor = None,
+        pool: concurrent.futures.ThreadPoolExecutor = None,
     ) -> None:
         super().__init__(strategy_runonrunning, strategy_error)
         self.running: bool = False
         self.stopsignal: bool = True
-        self.pool: futures.ThreadPoolExecutor = Coalesce(pool, UTS_DEFAULT_THREAD_POOL)
+        self.pool: concurrent.futures.ThreadPoolExecutor = Coalesce(
+            pool, UTS_DEFAULT_THREAD_POOL
+        )
         self.submit = None
         self.result = None
 
@@ -353,24 +357,42 @@ class StoppableThread(StoppableSomewhat):
                 self.result = self.foo(*arg, **kw)
             except Exception as e:
                 if self.strategy_error == StoppableThread.StrategyError.raise_error:
-                    self.running = False
                     raise e
                 elif self.strategy_error == StoppableThread.StrategyError.print_error:
                     traceback.print_exc()
                 elif self.strategy_error == StoppableThread.StrategyError.ignore:
                     pass
-            self.running = False
+            finally:
+                self.running = False
 
         self.submit = self.pool.submit(call)
+
+    def _signal_stop(self):
+        if self.submit is None:
+            return
+        self.stopsignal = True
+
+    def _wait_until_stop(self):
+        if self.submit is None:
+            return
+        self.submit.result()
+        self.running = False
+        # TODO consider do not remove future after finished, so we can get its result
+        self.submit = None
 
     @FunctionalWrapper
     def stop(self) -> None:
         if self.submit is None:
             return
-        self.stopsignal = True
-        self.submit.result()
-        self.running = False
-        self.submit = None
+        self._signal_stop()
+        self._wait_until_stop()
+
+    @staticmethod
+    def stop_multiple(*stoppable_threads: "StoppableThread"):
+        for t in stoppable_threads:
+            t._signal_stop()
+        for t in stoppable_threads:
+            t._wait_until_stop()
 
     def timeToStop(self) -> bool:
         return self.stopsignal
@@ -667,23 +689,27 @@ class Stage:
     def step(self, dt):
         raise NotImplementedError("")
 
-    t = property(fget=lambda self: None)
+    @property
+    def t(self):
+        raise NotImplementedError("")
 
 
 class TimeNonconcernedStage(Stage):
     def step(self, dt):
         pass
 
-    t = property(fget=lambda self: 0)
+    @property
+    def t(self):
+        return 0
 
 
 class SyncExecutableManager:
-    def __init__(self, pool: futures.ThreadPoolExecutor) -> None:
+    def __init__(self, pool: concurrent.futures.ThreadPoolExecutor) -> None:
         self.pool = pool
         self.selist: list[SyncExecutable] = []
-        self.executionLock = threading.Lock()
+        self.executionLock = threading.RLock()
 
-    def GiveExecutionPrivilegeToSe(self, se: "SyncExecutable"):
+    def _GiveExecutionPrivilegeToSe(self, se: "SyncExecutable"):
         # consider wait asyncly here and below
         se.cond.notify_all()
         se.cond.wait()
@@ -700,9 +726,9 @@ class SyncExecutableManager:
             if se.state == SyncExecutable.STATE.waitingCondition:
                 # knowing not satisfied, skip waking up
                 if se.waitCondition():
-                    self.GiveExecutionPrivilegeToSe(se)
+                    self._GiveExecutionPrivilegeToSe(se)
             elif se.state == SyncExecutable.STATE.running:
-                self.GiveExecutionPrivilegeToSe(se)
+                self._GiveExecutionPrivilegeToSe(se)
             elif se.state == SyncExecutable.STATE.stopped:
                 pass
             else:
@@ -734,21 +760,21 @@ class SyncExecutable:
     def main(self, **arg):
         raise NotImplementedError("not implemented")
 
-    def confirmExecutionPrivilege(self):
+    def _ConfirmExecutionPrivilege(self):
         self.cond.acquire(True)
-    
-    def giveAwayExecutionPrivilege(self):
+
+    def _GiveAwayExecutionPrivilege(self):
         self.cond.notify_all()
         self.cond.wait()
 
-    def exitExecution(self):
+    def _ExitExecution(self):
         self.cond.notify_all()  # no more sleep, aks sem to get up
         self.cond.release()
 
     def run(self, *a, **kw):
         def foo():
             try:
-                self.confirmExecutionPrivilege()
+                self._ConfirmExecutionPrivilege()
                 self.main(*a, **kw)
             except Exception as e:
                 traceback.print_exc()
@@ -756,12 +782,14 @@ class SyncExecutable:
                     raise e
             finally:
                 self.state = self.STATE.stopped
-                self.exitExecution()
+                self._ExitExecution()
 
         if not self.isworking():
+            self.sem.executionLock.acquire()
             self.state = self.STATE.running
             self.future = self.sem.pool.submit(foo)
             self.sem.selist.append(self)
+            self.sem.executionLock.release()
         return self
 
     # available in main
@@ -776,7 +804,7 @@ class SyncExecutable:
         while True:
             if untilWhatOrTimeOut():
                 break
-            self.giveAwayExecutionPrivilege()
+            self._GiveAwayExecutionPrivilege()
         self.waitCondition = None
         self.state = self.STATE.running
 
@@ -787,9 +815,9 @@ class SyncExecutable:
     # available in main
     def stepOneFrame(self):
         # buggy
-        self.waitCondition = lambda :True
+        self.waitCondition = lambda: True
         self.state = self.STATE.waitingCondition
-        self.giveAwayExecutionPrivilege()
+        self._GiveAwayExecutionPrivilege()
         self.waitCondition = None
         self.state = self.STATE.running
 
@@ -798,7 +826,8 @@ class SyncExecutable:
 
 
 class AccessibleQueue:
-    Annotation = lambda T: list[T]
+    def Annotation(T):
+        return list[T]
 
     class AQException(Exception):
         pass
@@ -1178,16 +1207,16 @@ class BeanUtil:
 
 
 class Container:
-    __content = None
+    v = None
 
     def get(self):
-        return self.__content
+        return self.v
 
     def set(self, newContent):
-        self.__content = newContent
+        self.v = newContent
 
     def isEmpty(self):
-        return self.__content is None
+        return self.v is None
 
 
 @dataclasses.dataclass
@@ -1221,7 +1250,7 @@ class Switch:
                 self.onSetOff()
         self.__value = False
 
-    def setTo(self, val):
+    def setTo(self, val: bool):
         if val:
             self.on()
         else:
@@ -1342,6 +1371,7 @@ class Cache:
         class UpdateStrategeyBase:
             def test(self, cache: "Cache") -> bool: ...
             def onUpdated(self, cache: "Cache") -> None: ...
+
         @dataclasses.dataclass
         class Outdated(UpdateStrategeyBase):
             outdatedTime: float
@@ -1416,7 +1446,7 @@ def Coalesce(*args):
     return None
 
 
-def mlambda(s: str, _globals=None, _locals=None) -> typing.Callable:
+def mlambda(s: str) -> typing.Callable:
     exp = regex.compile(
         r"^\s*def\s*(?<paraAndType>.*?):\s*?\n?(?<body>.+)$", flags=regex.DOTALL
     )
@@ -1426,8 +1456,6 @@ def mlambda(s: str, _globals=None, _locals=None) -> typing.Callable:
     match = match.groupdict()
     paraAndType = match["paraAndType"]
     body = match["body"]
-
-    emptyLine = regex.compile(r"^\s*(#.*)?$", flags=regex.MULTILINE)
 
     def fixBodyIndent(body: str):
         # force at least 1 space indent
@@ -1449,8 +1477,12 @@ def {lambdaName}{paraAndType}:
 {body}
 _setBackFun({lambdaName})
     """
-
-    exec(code, _globals, {**(_locals or {}), "_setBackFun": _setBackFun})
+    caller_frame = sys._getframe(1)
+    exec(
+        code,
+        caller_frame.f_globals,
+        {**caller_frame.f_locals, "_setBackFun": _setBackFun},
+    )
     return func
 
 
@@ -1702,6 +1734,7 @@ class Profiling:
         def __init__(self): ...
         def write(self, group, item, value): ...
         def flush(self): ...
+
     class PersisterInMemory(Persister):
 
         def getPath(self):
@@ -1751,6 +1784,61 @@ class ParamValueUnset:
     ...
 
 
+class Pwm(StoppableThread):
+    on_set_on: typing.Callable[[], None] = None
+    on_set_off: typing.Callable[[], None] = None
+    ratio = 0.0
+    period = 1
+    precision = 0.1
+
+    def __init__(
+        self,
+        on_set_on=None,
+        on_set_off=None,
+        ratio=None,
+        period=None,
+        precision=None,
+        *a,
+        **kw,
+    ):
+        super().__init__(*a, **kw)
+        self.on_set_on = on_set_on or self.on_set_on
+        self.on_set_off = on_set_off or self.on_set_off
+        self.ratio = ratio or self.ratio
+        self.period = period or self.period
+        self.precision = precision or self.precision
+
+    def foo(self):
+        switch = Switch(self.on_set_on, self.on_set_off)
+        while not self.timeToStop():
+            gamma = self.period * self.ratio
+            if gamma < self.precision:
+                switch.setTo(False)
+                PreciseSleep(self.period)
+            elif gamma > self.period - self.precision:
+                switch.setTo(True)
+                PreciseSleep(self.period)
+            else:
+                switch.setTo(True)
+                PreciseSleep(gamma)
+                switch.setTo(False)
+                PreciseSleep(self.period - gamma)
+        switch.setTo(False)
+
+
+class LazyLoading:
+    @dataclasses.dataclass
+    class LazyField:
+        fetcher: typing.Callable
+
+    def __getattribute__(self, name):
+        value = super().__getattribute__(name)
+        if isinstance(value, LazyLoading.LazyField):
+            value = value.fetcher(value)
+            setattr(self, name, value)
+        return value
+
+
 ################################################
 ################# not so solid #################
 ################################################
@@ -1781,10 +1869,14 @@ try:
                     self.exp = regex.compile(self.exp, flags=regex.DOTALL)
 
             def tryMatch(self, s: str, i: int) -> "None | FSMUtil.Token":
-                match = regex.match(self.exp, s)
+                match = regex.match(self.exp, s[i:])
                 if match is not None:
                     return FSMUtil.Token(
-                        self.type, match.group(0), i, i + len(match.group(0))
+                        self.type,
+                        match.group(0),
+                        i,
+                        i + len(match.group(0)),
+                        source=s,
                     )
                 return None
 
@@ -1794,19 +1886,28 @@ try:
             value: typing.Any
             start: int
             end: int
+            source: str = None
 
-            def Unexpected(self, s=None):
-                lineNo = None
-                if s is not None:
+            def Unexpected(self):
+                msg = ""
+                msg += f'unexpected token "{self.value}":{self.type}\n'
+                if self.source is not None:
                     # provide line No information
                     lineStartPos = [
-                        m.end() for m in regex.finditer(r"^", s, regex.MULTILINE)
+                        m.end()
+                        for m in regex.finditer(r"^", self.source, regex.MULTILINE)
                     ]
-                    lineNo = BiptrFindSection(self.start, lineStartPos)
-                msg = ""
-                msg += f'unexpected token "{self.value}":{self.type} at {self.start}-{self.end}'
-                if lineNo is not None:
-                    msg += f"\n at line {lineNo+1}"
+                    lineNo = Section(
+                        BiptrFindSection(self.start, lineStartPos),
+                        BiptrFindSection(self.end, lineStartPos),
+                    )
+                    columnNo = Section(
+                        self.start - lineStartPos[lineNo.start],
+                        self.end - lineStartPos[lineNo.end],
+                    )
+                    msg += f"At {self.start}-{self.end}, Ln {lineNo.start+1} Col {columnNo.start+1} ~ Ln {lineNo.end+1} Col {columnNo.end+1}"
+                else:
+                    msg += f"At {self.start}-{self.end}"
                 raise FSMUtil.ParseError(msg)
 
             def toSection(self):
@@ -1839,9 +1940,8 @@ try:
             i: int,
             matchers: list["FSMUtil.TokenMatcher"],
         ) -> "FSMUtil.Token":
-            sAfterI = s[i:]
             for m in matchers:
-                token = m.tryMatch(sAfterI, i)
+                token = m.tryMatch(s, i)
                 if token is not None:
                     return token
             sectionEnd = min(i + 10, len(s))
@@ -2017,7 +2117,7 @@ try:
             )
             host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
             path = regex.compile(
-                r"^(?<folder>.*?)(?:/(?<fileName>(?<fileBaseName>[^/]+?)(?<extName>\..*)?))?$"
+                r"^(?<folder>.*?)(?:/(?<fileName>(?<fileBaseName>[^/]+?)(?:\.(?<extName>.*))?))?$"
             )
 
         class UnexpectedException(Exception): ...

@@ -557,6 +557,11 @@ class Keyboard:
 
     @staticmethod
     def KeyDown(hexKeyCode):
+        '''
+        use like:
+            Keyboard.KeyDown(ord("S"))
+        to push key "S" down
+        '''
         extra = ctypes.c_ulong(0)
         ii_ = Input_I()
         ii_.ki = KeyBdInput(0, Vk2Sk().tr(hexKeyCode), 0x0008, 0, ctypes.pointer(extra))

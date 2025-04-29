@@ -120,7 +120,8 @@ class UrlFullResolutionLazyTest(unittest.TestCase):
             {
                 "baseHost": "zhimg.com",
                 "domain": "com",
-                "extName": ".jpg",
+                "extName": "jpg",
+                "fileBaseName": "v2-abed1a8c04700ba7d72b45195223e0ff_l",
                 "fileName": "v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg",
                 "folder": "",
                 "host": "picx.zhimg.com",
@@ -516,7 +517,7 @@ class SyncExecutableTest(unittest.TestCase):
                 sleep_specified_time(5)
                 sleep_specified_time(10)
 
-        pool = futures.ThreadPoolExecutor()
+        pool = concurrent.futures.ThreadPoolExecutor()
         eosm = SyncExecutableManager(pool)
         stage = SyncExecutableTest._testbed(eosm)
         script = ScriptTest(stage, eosm).run()
@@ -572,7 +573,7 @@ class SyncExecutableTest(unittest.TestCase):
 
     def test_multiScriptFlow(selfTest):
         production = SyncExecutableTest.ConsumerProducer.Production(0)
-        pool = futures.ThreadPoolExecutor()
+        pool = concurrent.futures.ThreadPoolExecutor()
         eosm = SyncExecutableManager(pool)
         stage = SyncExecutableTest._testbed(eosm)
         ms = SyncExecutableTest.ConsumerProducer.MainScript(stage, eosm).run(
@@ -590,7 +591,7 @@ class SyncExecutableTest(unittest.TestCase):
                 break
 
     def test_LaunchThreadInThread(selfTest):
-        pool = futures.ThreadPoolExecutor()
+        pool = concurrent.futures.ThreadPoolExecutor()
         eosm = SyncExecutableManager(pool)
         stage = SyncExecutableTest._testbed(eosm)
         records = list()
@@ -627,6 +628,23 @@ class SyncExecutableTest(unittest.TestCase):
             if ms.state == SyncExecutable.STATE.stopped:
                 break
         pass
+
+
+class LazyFieldEvaluationTest(unittest.TestCase):
+    def test_basicUsage(self):
+        inst = None
+        evaluation_result = 1
+
+        class EvaluationLazy(LazyLoading):
+            def _init_value(selfel):
+                self.assertIsNotNone(inst)
+                return evaluation_result
+
+            value = LazyLoading.LazyField(_init_value)
+
+        inst = EvaluationLazy()
+        value_got = inst.value
+        self.assertEqual(value_got, evaluation_result)
 
 
 unittest.main()
