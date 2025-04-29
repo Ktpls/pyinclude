@@ -110,25 +110,38 @@ class ExpparserTest(unittest.TestCase):
 
 
 class UrlFullResolutionLazyTest(unittest.TestCase):
-    def test_of(self):
+    def test_fields(self):
         res = UrlFullResolution.of(
-            r"https://picx.zhimg.com/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg?source=32738c0c&needBackground=1"
+            r"https://picx.zhimg.com:8080/the_folder/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg?source=32738c0c&needBackground=1"
         )
         res.calcAll()
         self.assertDictEqual(
-            res._resultMap,
+            {
+                "baseHost": res.baseHost,
+                "domain": res.domain,
+                "extName": res.extName,
+                "fileBaseName": res.fileBaseName,
+                "fileName": res.fileName,
+                "folder": res.folder,
+                "host": res.host,
+                "param": res.param,
+                "path": res.path,
+                "port": res.port,
+                "protocol": res.protocol,
+                "secondaryHost": res.secondaryHost,
+            },
             {
                 "baseHost": "zhimg.com",
                 "domain": "com",
                 "extName": "jpg",
                 "fileBaseName": "v2-abed1a8c04700ba7d72b45195223e0ff_l",
                 "fileName": "v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg",
-                "folder": "",
-                "host": "picx.zhimg.com",
-                "param": "?source=32738c0c&needBackground=1",
-                "path": "/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg",
-                "port": None,
-                "protocol": "https://",
+                "folder": "/the_folder",
+                "host": "picx.zhimg.com:8080",
+                "param": "source=32738c0c&needBackground=1",
+                "path": "/the_folder/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg",
+                "port": "8080",
+                "protocol": "https",
                 "secondaryHost": "picx",
             },
         )

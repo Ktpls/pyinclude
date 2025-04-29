@@ -1831,11 +1831,20 @@ class LazyLoading:
     class LazyField:
         fetcher: typing.Callable
 
+    def _raw_get(self, name):
+        return super().__getattribute__(name)
+
+    def _raw_set(self, name, value):
+        setattr(self, name, value)
+
+    def _is_uninitialized(self, name):
+        return isinstance(self._raw_get(name), LazyLoading.LazyField)
+
     def __getattribute__(self, name):
         value = super().__getattribute__(name)
         if isinstance(value, LazyLoading.LazyField):
             value = value.fetcher(value)
-            setattr(self, name, value)
+            self._raw_set(name, value)
         return value
 
 
@@ -2040,11 +2049,7 @@ try:
             def movPrev(self):
                 return self._it.movPrev()
 
-    @dataclasses.dataclass
-    class UrlFullResolution:
-
-        url: str | None
-        _resultMap: dict = dataclasses.field(init=False, default_factory=dict)
+    class UrlFullResolution(LazyLoading):
 
         class _Scopes:
             protocol = "protocol"
@@ -2060,72 +2065,72 @@ try:
             fileBaseName = "fileBaseName"
             extName = "extName"
 
-        def _ReadOrCalculate(self, name):
-            if self._isUncalculatedScope(name):
-                if name in [
-                    UrlFullResolution._Scopes.protocol,
-                    UrlFullResolution._Scopes.host,
-                    UrlFullResolution._Scopes.path,
-                    UrlFullResolution._Scopes.param,
-                ]:
-                    self._parseStepGlobally()
-                elif name in [
-                    UrlFullResolution._Scopes.secondaryHost,
-                    UrlFullResolution._Scopes.baseHost,
-                    UrlFullResolution._Scopes.domain,
-                    UrlFullResolution._Scopes.port,
-                ]:
-                    self._parseStepHost()
-                elif name in [
-                    UrlFullResolution._Scopes.folder,
-                    UrlFullResolution._Scopes.fileName,
-                    UrlFullResolution._Scopes.fileBaseName,
-                    UrlFullResolution._Scopes.extName,
-                ]:
-                    self._parseStepPath()
-            return self._GetScope(name)
-
-        def _isUncalculatedScope(self, name):
-            return name not in self._resultMap
-
-        def _GetScope(self, name):
-            return self._resultMap[name]
+        url: str | None
+        protocol = LazyLoading.LazyField(
+            lambda self: self._parseStepGlobally(UrlFullResolution._Scopes.protocol)
+        )
+        host = LazyLoading.LazyField(
+            lambda self: self._parseStepGlobally(UrlFullResolution._Scopes.host)
+        )
+        path = LazyLoading.LazyField(
+            lambda self: self._parseStepGlobally(UrlFullResolution._Scopes.path)
+        )
+        param = LazyLoading.LazyField(
+            lambda self: self._parseStepGlobally(UrlFullResolution._Scopes.param)
+        )
+        secondaryHost = LazyLoading.LazyField(
+            lambda self: self._parseStepHost(UrlFullResolution._Scopes.secondaryHost)
+        )
+        baseHost = LazyLoading.LazyField(
+            lambda self: self._parseStepHost(UrlFullResolution._Scopes.baseHost)
+        )
+        domain = LazyLoading.LazyField(
+            lambda self: self._parseStepHost(UrlFullResolution._Scopes.domain)
+        )
+        port = LazyLoading.LazyField(
+            lambda self: self._parseStepHost(UrlFullResolution._Scopes.port)
+        )
+        folder = LazyLoading.LazyField(
+            lambda self: self._parseStepPath(UrlFullResolution._Scopes.folder)
+        )
+        fileName = LazyLoading.LazyField(
+            lambda self: self._parseStepPath(UrlFullResolution._Scopes.fileName)
+        )
+        fileBaseName = LazyLoading.LazyField(
+            lambda self: self._parseStepPath(UrlFullResolution._Scopes.fileBaseName)
+        )
+        extName = LazyLoading.LazyField(
+            lambda self: self._parseStepPath(UrlFullResolution._Scopes.extName)
+        )
 
         def _SetScope(self, name, val):
-            self._resultMap[name] = val
-
-        @staticmethod
-        def _scope(n):
-            return property(lambda self: self._ReadOrCalculate(n))
-
-        protocol = _scope(_Scopes.protocol)
-        host = _scope(_Scopes.host)
-        path = _scope(_Scopes.path)
-        param = _scope(_Scopes.param)
-        secondaryHost = _scope(_Scopes.secondaryHost)
-        baseHost = _scope(_Scopes.baseHost)
-        domain = _scope(_Scopes.domain)
-        port = _scope(_Scopes.port)
-        folder = _scope(_Scopes.folder)
-        fileName = _scope(_Scopes.fileName)
-        fileBaseName = _scope(_Scopes.fileBaseName)
-        extName = _scope(_Scopes.extName)
+            self._raw_set(name, val)
 
         class RegPool:
             globally = regex.compile(
-                r"^(?<protcol>[A-Za-z]+://)?(?<host>[^/]+\.[^/.]+)?(?<path>[^?]*)?(?<param>\?.*)?$"
+                r"^((?<protcol>[A-Za-z]+)://)?(?<host>[^/]+\.[^/.]+)?(?<path>[^?]*)?(\?(?<param>.*))?$"
             )
-            host = regex.compile(r"^(?<host>[^:]+)(?<port>:\d+)?$")
+            host = regex.compile(r"^(?<host>[^:]+)(:(?<port>\d+))?$")
             path = regex.compile(
                 r"^(?<folder>.*?)(?:/(?<fileName>(?<fileBaseName>[^/]+?)(?:\.(?<extName>.*))?))?$"
             )
 
         class UnexpectedException(Exception): ...
 
+        @staticmethod
+        def _parse_and_return_specified_field(func: typing.Callable):
+            def f2(self, ret_field=None):
+                func(self)
+                if ret_field is not None:
+                    return self._GetScope(ret_field)
+
+            return f2
+
+        @_parse_and_return_specified_field
         def _parseStepGlobally(self):
             if any(
                 [
-                    self._isUncalculatedScope(n)
+                    self._is_uninitialized(n)
                     for n in [
                         UrlFullResolution._Scopes.protocol,
                         UrlFullResolution._Scopes.host,
@@ -2146,10 +2151,12 @@ try:
                 self._SetScope(UrlFullResolution._Scopes.path, path)
                 self._SetScope(UrlFullResolution._Scopes.param, param)
 
+        @_parse_and_return_specified_field
         def _parseStepHost(self):
+            self._parseStepGlobally()
             if any(
                 [
-                    self._isUncalculatedScope(n)
+                    self._is_uninitialized(n)
                     for n in [
                         UrlFullResolution._Scopes.port,
                         UrlFullResolution._Scopes.secondaryHost,
@@ -2180,10 +2187,12 @@ try:
                 self._SetScope(UrlFullResolution._Scopes.baseHost, baseHost)
                 self._SetScope(UrlFullResolution._Scopes.domain, domain)
 
+        @_parse_and_return_specified_field
         def _parseStepPath(self):
+            self._parseStepGlobally()
             if any(
                 [
-                    self._isUncalculatedScope(n)
+                    self._is_uninitialized(n)
                     for n in [
                         UrlFullResolution._Scopes.folder,
                         UrlFullResolution._Scopes.fileName,
@@ -2208,8 +2217,8 @@ try:
             self._parseStepHost()
             self._parseStepPath()
 
-        def __post_init__(self):
-            self.url = PathNormalize(self.url)
+        def __init__(self, url: str):
+            self.url = PathNormalize(url)
 
         @staticmethod
         def of(url: str):
