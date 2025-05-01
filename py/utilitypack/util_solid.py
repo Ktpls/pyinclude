@@ -1843,7 +1843,7 @@ class LazyLoading:
     def __getattribute__(self, name):
         value = super().__getattribute__(name)
         if isinstance(value, LazyLoading.LazyField):
-            value = value.fetcher(value)
+            value = value.fetcher(self)
             self._raw_set(name, value)
         return value
 
@@ -2119,10 +2119,10 @@ try:
 
         @staticmethod
         def _parse_and_return_specified_field(func: typing.Callable):
-            def f2(self, ret_field=None):
+            def f2(self: "UrlFullResolution", ret_field=None):
                 func(self)
                 if ret_field is not None:
-                    return self._GetScope(ret_field)
+                    return self._raw_get(ret_field)
 
             return f2
 
