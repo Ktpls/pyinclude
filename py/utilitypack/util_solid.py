@@ -1,8 +1,9 @@
-from datetime import datetime
+import collections
 import concurrent.futures
 import copy
 import ctypes
 import dataclasses
+import datetime
 import enum
 import functools
 import heapq
@@ -435,7 +436,7 @@ def WriteTextFile(path: str, text: str):
 
 
 def GetTimeString():
-    return datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+    return datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
 
 
 class Progress:
@@ -1669,7 +1670,7 @@ class GSLogger:
 
         @staticmethod
         def FileHandler(fileName=None, logFilePath=None):
-            fileName = fileName or f"{datetime.now().strftime('%Y-%m-%d')}.log"
+            fileName = fileName or f"{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
             logFilePath = logFilePath or GSLogger.Handlers.FileHandlerDefaultPath
             EnsureDirectoryExists(logFilePath)
             return logging.FileHandler(os.path.join(logFilePath, fileName))
@@ -1827,6 +1828,17 @@ class Pwm(StoppableThread):
 
 
 class LazyLoading:
+    """
+    usage:
+        class Clz(LazyLoading):
+            a: int = LazyLoading.LazyField(lambda self: 1)
+            b: int = LazyLoading.LazyField(lambda self: self.a + 1)
+            c: int = LazyLoading.LazyField(lambda self: self.b + 1)
+        clz = Clz()
+    known issue:
+        when using dataclass to initialize, all lazy fields will be initialized on creating
+    """
+
     @dataclasses.dataclass
     class LazyField:
         fetcher: typing.Callable
@@ -1846,6 +1858,167 @@ class LazyLoading:
             value = value.fetcher(self)
             self._raw_set(name, value)
         return value
+
+
+T = typing.TypeVar("T")
+
+
+class Stream(typing.Generic[T]):
+    # copied from superstream!
+    R = typing.TypeVar("R")
+    K = typing.TypeVar("K")
+    U = typing.TypeVar("U")
+
+    def __init__(self, stream: typing.Iterable[T]):
+        self._stream = iter(stream)
+
+    def __iter__(self):
+        return self._stream
+
+    @staticmethod
+    def of(*args: T) -> "Stream[T]":
+        return Stream(args)
+
+    def map(self, func: typing.Callable[[T], R]) -> "Stream[R]":
+        return Stream(map(func, self._stream))
+
+    def flat_map(self, func: typing.Callable[[T], "Stream[R]"]) -> "Stream[R]":
+        return Stream(itertools.chain.from_iterable(map(func, self._stream)))
+
+    def filter(self, func: typing.Callable[[T], bool]) -> "Stream[T]":
+        return Stream(filter(func, self._stream))
+
+    def for_each(self, func: typing.Callable[[T], None]) -> None:
+        for i in self._stream:
+            func(i)
+
+    def distinct(self):
+        return Stream(list(dict.fromkeys(self._stream)))
+
+    def sorted(self, key=None, reverse=False) -> "Stream[T]":
+        return Stream(sorted(self._stream, key=key, reverse=reverse))
+
+    def count(self) -> int:
+        cnt = itertools.count()
+        collections.deque(zip(self._stream, cnt), maxlen=0)
+        return next(cnt)
+
+    def sum(self) -> "T":
+        return sum(self._stream)
+
+    def group_by(self, classifier: typing.Callable[[T], K]) -> dict[K, list[T]]:
+        groups = {}
+        for i in self._stream:
+            groups.setdefault(classifier(i), []).append(i)
+        return groups
+
+    def reduce(
+        self, func: typing.Callable[[T, T], T], initial: T = None
+    ) -> typing.Optional[T]:
+        if initial is not None:
+            return functools.reduce(func, self._stream, initial)
+        else:
+            try:
+                return functools.reduce(func, self._stream)
+            except TypeError:
+                return None
+
+    def limit(self, max_size: int) -> "Stream[T]":
+        return Stream(itertools.islice(self._stream, max_size))
+
+    def skip(self, n: int) -> "Stream[T]":
+        return Stream(itertools.islice(self._stream, n, None))
+
+    def min(
+        self, key: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
+    ) -> typing.Optional[T]:
+        """
+        :param default: use default value when stream is empty
+        :param key: at lease supported __lt__ method
+        """
+        return min(self._stream, key=key, default=default)
+
+    def max(
+        self, key: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
+    ) -> typing.Optional[T]:
+        """
+        :param default: use default value when stream is empty
+        :param key: at lease supported __lt__ method
+        """
+        return max(self._stream, key=key, default=default)
+
+    def find_first(self) -> typing.Optional[T]:
+        try:
+            return next(self._stream)
+        except StopIteration:
+            return None
+
+    def any_match(self, func: typing.Callable[[T], bool]) -> bool:
+        """
+        this is equivalent to
+            for i in self._stream:
+                if func(i):
+                    return True
+            return False
+        :param func:
+        :return:
+        """
+        return any(map(func, self._stream))
+
+    def all_match(self, func: typing.Callable[[T], bool]) -> bool:
+        return all(map(func, self._stream))
+
+    def none_match(self, func: typing.Callable[[T], bool]) -> bool:
+        return not self.any_match(func)
+
+    def to_list(self) -> list[T]:
+        return list(self._stream)
+
+    def to_set(self) -> set[T]:
+        return set(self._stream)
+
+    def to_dict(
+        self, k: typing.Callable[[T], K], v: typing.Callable[[T], U]
+    ) -> dict[K, U]:
+        return {k(i): v(i) for i in self._stream}
+
+    def to_map(
+        self, k: typing.Callable[[T], K], v: typing.Callable[[T], U]
+    ) -> dict[K, U]:
+        return self.to_dict(k, v)
+
+    def collect(self, func: typing.Callable[[typing.Iterable[T]], R]) -> R:
+        return func(self._stream)
+
+
+class PositionalArgsResolvedAsNamedKwargs:
+    def __init__(
+        self,
+        func: typing.Callable,
+    ):
+        self.func = func
+        self.parameters_of_signature = list(inspect.signature(func).parameters.items())
+
+    def apply(
+        self,
+        modifier: typing.Callable[[str, typing.Any], typing.Any],
+        args: list[typing.Any],
+        kwargs: dict[str, typing.Any],
+    ):
+        """
+        modifier:
+            param:
+                name of param
+                value of param
+            return:
+                value result of modified param
+        """
+        args = [
+            modifier(name, val_arg)
+            for val_arg, (name, param) in zip(args, self.parameters_of_signature)
+        ]
+        kwargs = {k: modifier(k, v) for k, v in kwargs.items()}
+        return args, kwargs
 
 
 ################################################
