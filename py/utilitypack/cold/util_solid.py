@@ -1047,6 +1047,8 @@ try:
             "atan2": math.atan2,
             "exp": math.exp,
             "log": math.log,
+            "log2": math.log2,
+            "log10": math.log10,
             "sqrt": math.sqrt,
             "abs": abs,
             "sign": lambda x: 1 if x > 0 else -1 if x < 0 else 0,
@@ -1062,6 +1064,8 @@ try:
             "CNum": float,
             "CBool": bool,
             "CList": CList,
+            "clip": lambda x, mini,maxi: np.clip(x,mini,maxi),
+            "relerr": lambda a, b: np.abs(a-b)/(a+EPS),
         }
 
         BasicConstantLib = {

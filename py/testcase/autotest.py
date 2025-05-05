@@ -117,7 +117,7 @@ class UrlFullResolutionLazyTest(unittest.TestCase):
         extName = "jpg"
         fileBaseName = "v2-abed1a8c04700ba7d72b45195223e0ff_l"
         fileName = "v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg"
-        folder = "/the_folder"
+        folder = "/the_folder/"
         host = "picx.zhimg.com:8080"
         param = "source=32738c0c&needBackground=1"
         path = "/the_folder/v2-abed1a8c04700ba7d72b45195223e0ff_l.jpg"
@@ -158,6 +158,12 @@ class UrlFullResolutionLazyTest(unittest.TestCase):
             {k: getattr(res, k) for k in fields},
             {k: getattr(self.example, k) for k in fields},
         )
+
+    def test_corner_dot_in_path(self):
+        res = UrlFullResolution.of(
+            r"C:\file\Gs\Storage\mc\.minecraft\versions\1.21.1-NeoForge_21.1.168\saves\Dragon Island"
+        )
+        self.assertEqual(res.fileName, r"Dragon Island")
 
 
 class MaxRetryTest(unittest.TestCase):

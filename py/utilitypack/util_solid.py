@@ -531,8 +531,9 @@ class perf_statistic:
     clear() will clear all accumulated time, stops counting
     """
 
-    def __init__(self, startnow=False):
+    def __init__(self, startnow=False, enable_time_detail=False):
         self._singled = SingleSectionedTimer()
+        self.enable_time_detail = enable_time_detail
         self.clear()
         if startnow:
             self.start()
@@ -557,7 +558,8 @@ class perf_statistic:
             timeThisRound = self._singled.get()
             self._singled.clear()
             self._stagedTime += timeThisRound
-            self._stagedTimeList.append(timeThisRound)
+            if self.enable_time_detail:
+                self._stagedTimeList.append(timeThisRound)
         return self
 
     def isRunning(self):
@@ -2285,7 +2287,7 @@ try:
             )
             host = regex.compile(r"^(?<host>[^:]+)(:(?<port>\d+))?$")
             path = regex.compile(
-                r"^(?<folder>.*?)(?:/(?<fileName>(?<fileBaseName>[^/]+?)(?:\.(?<extName>.*))?))?$"
+                r"^(?<folder>/?(?:[^/]+/)+)(?:(?<fileName>(?<fileBaseName>.+?)(?:\.(?<extName>.*))?))?$"
             )
 
         class UnexpectedException(Exception): ...
@@ -2302,7 +2304,7 @@ try:
         @_parse_and_return_specified_field
         def _parseStepGlobally(self):
             if any(
-                [
+                (
                     self._is_uninitialized(n)
                     for n in [
                         UrlFullResolution._Scopes.protocol,
@@ -2310,7 +2312,7 @@ try:
                         UrlFullResolution._Scopes.path,
                         UrlFullResolution._Scopes.param,
                     ]
-                ]
+                )
             ):
                 protocol, host, path, param = [None] * 4
                 if self.url is not None:
@@ -2328,7 +2330,7 @@ try:
         def _parseStepHost(self):
             self._parseStepGlobally()
             if any(
-                [
+                (
                     self._is_uninitialized(n)
                     for n in [
                         UrlFullResolution._Scopes.port,
@@ -2336,7 +2338,7 @@ try:
                         UrlFullResolution._Scopes.baseHost,
                         UrlFullResolution._Scopes.domain,
                     ]
-                ]
+                )
             ):
                 secondaryHost, baseHost, domain, port = [None] * 4
                 if self.host is not None:
@@ -2364,14 +2366,14 @@ try:
         def _parseStepPath(self):
             self._parseStepGlobally()
             if any(
-                [
+                (
                     self._is_uninitialized(n)
                     for n in [
                         UrlFullResolution._Scopes.folder,
                         UrlFullResolution._Scopes.fileName,
                         UrlFullResolution._Scopes.extName,
                     ]
-                ]
+                )
             ):
                 folder, fileName, fileBaseName, extName = [None] * 4
                 if self.path is not None:
