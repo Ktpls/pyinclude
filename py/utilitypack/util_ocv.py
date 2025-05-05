@@ -28,10 +28,19 @@ def savemat(m, name=None, ext=None, path=None, autorename=True):
     if not cv.imwrite(totalpath, m):
         raise IOError(f"Bad write {totalpath}")
 
-def CvNormalize_Copy(src: cv.typing.MatLike, alpha: float = ..., beta: float = ..., norm_type: int = ..., dtype: int = None, mask: cv.typing.MatLike | None = None):
-    dst=np.zeros_like(src)
+
+def CvNormalize_Copy(
+    src: cv.typing.MatLike,
+    alpha: float = ...,
+    beta: float = ...,
+    norm_type: int = ...,
+    dtype: int = None,
+    mask: cv.typing.MatLike | None = None,
+):
+    dst = np.zeros_like(src)
     cv.normalize(src, dst, alpha, beta, norm_type, dtype, mask)
     return dst
+
 
 def savematn(m: np.ndarray, name=None, ext=None, path=None, autorename=True):
     mtmp = np.zeros_like(m)
@@ -450,6 +459,21 @@ class MotionEstimator:
             return ret
 
 
+class CvUnicodePathUtil:
+    @staticmethod
+    def imwrite(path: str, mat: np.ndarray, ext: str = ".png"):
+        suc, ndarrayBytes = cv.imencode(ext, mat)
+        ndarrayBytes = ndarrayBytes.tobytes()
+        WriteFile(path, ndarrayBytes)
+
+    @staticmethod
+    def imread(path: str, flags: int):
+        ndarrayBytes = ReadFile(path)
+        ndarrayBytes = np.frombuffer(ndarrayBytes, dtype=np.uint8)
+        mat = cv.imdecode(ndarrayBytes, flags)
+        return mat
+
+
 class AffineMats:
     dtype = np.float32
     zoom = lambda rate: np.array(
@@ -494,101 +518,109 @@ class AffineMats:
     #         return v[*slce]
 
 
-class MtiFilter:
-    @dataclasses.dataclass
-    class MtiFrame:
-        img: np.ndarray
+try:
 
-        # compared with prev frame
-        cammotion: np.ndarray
+    import scipy.interpolate as interpolate
 
-    def __init__(self, mtiQueueSize, filter=None, camstablize=True) -> None:
-        """
-        consider storage only the transformed and meaned pic
-        like the dynamic window way. kick the oldest one in queue out, and take its effect out of meaned pic
-        """
-        if filter is None:
-            self.filter = interpolate.interp1d(
-                [0, 0.3, 0.6, 1],
-                [0, 0, 1, 1],
-                kind="linear",
-                bounds_error=False,
-                fill_value=0,
-                assume_sorted=True,
-            )
-        else:
-            self.filter = filter
-        self.camstablize = camstablize
-        # fake type notation in order to scam ide type analysis
-        self.mtiQueue: list[MtiFilter.MtiFrame] | AccessibleQueue = AccessibleQueue(
-            mtiQueueSize
-        )
+    class MtiFilter:
+        @dataclasses.dataclass
+        class MtiFrame:
+            img: np.ndarray
 
-        # try convienient type annotation but wont work
-        # self.mtiQueue: AccessibleQueue.Annotation(
-        #     MtiFilter.MtiStorage
-        # ) = AccessibleQueue(5)
+            # compared with prev frame
+            cammotion: np.ndarray
 
-    def update(
-        self, img: np.ndarray, roi: np.ndarray = None, cammotion: np.ndarray = None
-    ):
-        if not self.camstablize or cammotion is None:
-            cammotion = np.array([[1, 0, 0], [0, 1, 0]], np.float32)
-        if roi is None:
-            cutRoiShift = AffineMats.identity()
-            desiredImgShape = np.flip(img.shape[:2])
-        else:
-            cutRoiShift = AffineMats.shift(-roi[0], -roi[1])
-            desiredImgShape = np.array(roi[2:]) - np.array(roi[:2])
-
-        if self.mtiQueue.isEmpty():
-            ret = None
-        else:
-            # mit proc
-            def cammotionmat2x3to3x3(cammot: np.ndarray):
-                return np.concatenate(
-                    [
-                        cammot,
-                        [[0, 0, 1]],
-                    ]
+        def __init__(self, mtiQueueSize, filter=None, camstablize=True) -> None:
+            """
+            consider storage only the transformed and meaned pic
+            like the dynamic window way. kick the oldest one in queue out, and take its effect out of meaned pic
+            """
+            if filter is None:
+                self.filter = interpolate.interp1d(
+                    [0, 0.3, 0.6, 1],
+                    [0, 0, 1, 1],
+                    kind="linear",
+                    bounds_error=False,
+                    fill_value=0,
+                    assume_sorted=True,
                 )
-
-            def cammotionmat3x3to2x3(cammot: np.ndarray):
-                return cammot[:2, :]
-
-            if self.camstablize:
-                motionProd = cammotionmat2x3to3x3(cammotion)
             else:
-                motionProd = None
-            prevScreenAtNowViewList = []
-            for i in range(len(self.mtiQueue)):
-                # iter from the newest to oldest
-                if self.camstablize:
-                    # cut roi is done in affining
-                    # warpAffine processing float32 is faster than uint8
-                    prevScreenAtNowView = cv.warpAffine(
-                        self.mtiQueue[-i].img,
-                        cammotionmat3x3to2x3(cutRoiShift @ motionProd),
-                        desiredImgShape,
-                        borderMode=cv.BORDER_CONSTANT,
-                        borderValue=0,
-                    )
-                    motionProd = (
-                        cammotionmat2x3to3x3(self.mtiQueue[-i].cammotion) @ motionProd
-                    )
-                else:
-                    if roi is not None:
-                        # cut manually
-                        # slightly faster, not significantly
-                        prevScreenAtNowView = self.mtiQueue[-i].img[
-                            roi[1] : roi[3], roi[0] : roi[2]
-                        ]
-                prevScreenAtNowViewList.append(prevScreenAtNowView)
-            prevsignal = np.array(prevScreenAtNowViewList)
-            delta = np.max(
-                np.max(prevsignal, axis=0) - np.min(prevsignal, axis=0), axis=-1
+                self.filter = filter
+            self.camstablize = camstablize
+            # fake type notation in order to scam ide type analysis
+            self.mtiQueue: list[MtiFilter.MtiFrame] | AccessibleQueue = AccessibleQueue(
+                mtiQueueSize
             )
-            # delta = np.max(np.std(prevsignal, axis=0), axis=-1)
-            ret = self.filter(delta)
-        self.mtiQueue.push__pop_if_full(MtiFilter.MtiFrame(img, cammotion))
-        return ret
+
+            # try convienient type annotation but wont work
+            # self.mtiQueue: AccessibleQueue.Annotation(
+            #     MtiFilter.MtiStorage
+            # ) = AccessibleQueue(5)
+
+        def update(
+            self, img: np.ndarray, roi: np.ndarray = None, cammotion: np.ndarray = None
+        ):
+            if not self.camstablize or cammotion is None:
+                cammotion = np.array([[1, 0, 0], [0, 1, 0]], np.float32)
+            if roi is None:
+                cutRoiShift = AffineMats.identity()
+                desiredImgShape = np.flip(img.shape[:2])
+            else:
+                cutRoiShift = AffineMats.shift(-roi[0], -roi[1])
+                desiredImgShape = np.array(roi[2:]) - np.array(roi[:2])
+
+            if self.mtiQueue.isEmpty():
+                ret = None
+            else:
+                # mit proc
+                def cammotionmat2x3to3x3(cammot: np.ndarray):
+                    return np.concatenate(
+                        [
+                            cammot,
+                            [[0, 0, 1]],
+                        ]
+                    )
+
+                def cammotionmat3x3to2x3(cammot: np.ndarray):
+                    return cammot[:2, :]
+
+                if self.camstablize:
+                    motionProd = cammotionmat2x3to3x3(cammotion)
+                else:
+                    motionProd = None
+                prevScreenAtNowViewList = []
+                for i in range(len(self.mtiQueue)):
+                    # iter from the newest to oldest
+                    if self.camstablize:
+                        # cut roi is done in affining
+                        # warpAffine processing float32 is faster than uint8
+                        prevScreenAtNowView = cv.warpAffine(
+                            self.mtiQueue[-i].img,
+                            cammotionmat3x3to2x3(cutRoiShift @ motionProd),
+                            desiredImgShape,
+                            borderMode=cv.BORDER_CONSTANT,
+                            borderValue=0,
+                        )
+                        motionProd = (
+                            cammotionmat2x3to3x3(self.mtiQueue[-i].cammotion)
+                            @ motionProd
+                        )
+                    else:
+                        if roi is not None:
+                            # cut manually
+                            # slightly faster, not significantly
+                            prevScreenAtNowView = self.mtiQueue[-i].img[
+                                roi[1] : roi[3], roi[0] : roi[2]
+                            ]
+                    prevScreenAtNowViewList.append(prevScreenAtNowView)
+                prevsignal = np.array(prevScreenAtNowViewList)
+                delta = np.max(
+                    np.max(prevsignal, axis=0) - np.min(prevsignal, axis=0), axis=-1
+                )
+                # delta = np.max(np.std(prevsignal, axis=0), axis=-1)
+                ret = self.filter(delta)
+            self.mtiQueue.push__pop_if_full(MtiFilter.MtiFrame(img, cammotion))
+            return ret
+
+except ImportError:
+    pass
