@@ -1,4 +1,7 @@
 from ..util_solid import *
+import io
+import ast
+import copy
 
 """
 solid
@@ -261,6 +264,432 @@ def WrapperOfMultiLineText(s):
 def printAndRet(val):
     print(val)
     return val
+
+
+class DistillLibraryFromDependency:
+    """
+    勉强能用
+    """
+
+    _builtins = {
+        "str",
+        "int",
+        "float",
+        "bool",
+        "list",
+        "tuple",
+        "set",
+        "dict",
+        "str",
+        "print",
+        "enumerate",
+        "zip",
+        "map",
+        "filter",
+        "bytearray",
+        "open",
+        "range",
+        "abs",
+        "min",
+        "max",
+        "sum",
+        "len",
+        "sorted",
+        "reversed",
+        "any",
+        "all",
+        "isinstance",
+        "type",
+        "dir",
+        "hasattr",
+        "getattr",
+        "setattr",
+        "delattr",
+        "eval",
+        "staticmethod",
+        "classmethod",
+        "super",
+        "self",
+        "None",
+        "True",
+        "False",
+        "Ellipsis",
+        "Exception",
+        "ord",
+        "chr",
+        "exit",
+    }
+
+    class DeclarationAndDependencyFinder(ast.NodeVisitor):
+        @dataclasses.dataclass
+        class RichDefined:
+            name: str
+            sec: Section = None
+
+        def __init__(self):
+            self.richDefineds: list[
+                dict[
+                    str,
+                    DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined,
+                ]
+            ] = [dict()]
+            self.defineds: list[set[str]] = [
+                copy.copy(DistillLibraryFromDependency._builtins)
+            ]  # 使用栈来管理作用域
+            self.undeclUse: list[set[str]] = [set()]  # 存储未定义的变量
+            self.definedInCurStackFrameFreshNow()  # buffer for definedInCurStackFrame()
+
+        def definedInCurStackFrame(self) -> set[str]:
+            return self.dicsf
+
+        def definedInCurStackFrameFreshNow(self) -> None:
+            self.dicsf = set.union(*self.defineds)
+
+        def NewStackFrame(self) -> None:
+            self.richDefineds.append(dict())
+            self.defineds.append(set())
+            self.undeclUse.append(set())
+            self.definedInCurStackFrameFreshNow()
+
+        def PopStackFrame(self) -> None:
+            # 弹出当前作用域，并添加内层被使用但仍未定义的变量，遗留到外层0作用域，留待后置定义
+            childUndefined: set[str] = self.undeclUse.pop()
+            self.undeclUse[-1].update(childUndefined)
+            self.defineds.pop()
+            self.richDefineds.pop()
+            self.definedInCurStackFrameFreshNow()
+
+        def addDef(self, s: str, sec: Section = None) -> None:
+            if s not in self.definedInCurStackFrame():
+                self.richDefineds[-1][s] = (
+                    DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined(
+                        s, sec
+                    )
+                )
+            self.defineds[-1].add(s)
+            self.dicsf.add(s)  # maintain buffer
+            # 后置定义
+            # 已禁用
+            # 因为后定义的正确性需要考虑代码的执行时机，但源码分析没法做到。
+            # 这样禁用可能把有定义的东西当做没定义，但严格些也比报错好
+            # self.undeclUse[-1].discard(s)
+
+        def addUse(self, s: str) -> None:
+            # 如果变量被使用且不在任何作用域中定义，则记录为 used
+            if s not in self.definedInCurStackFrame():
+                self.addUndeclUse(s)
+
+        def addUndeclUse(self, s: str) -> None:
+            self.undeclUse[-1].add(s)
+
+        def getFunctionOrClassRealBeginLineNoIncludingDecorator(
+            self, node: ast.FunctionDef | ast.ClassDef
+        ) -> int:
+            # ast不认为装饰器是函数或类定义的一部分，但我们一般需要这样认为
+            # 返回函数或类的真实开始行号，包括装饰器
+            return min([node.lineno, *[d.lineno for d in node.decorator_list]])
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            # 函数名本身视为已定义
+            self.addDef(
+                node.name,
+                Section(
+                    self.getFunctionOrClassRealBeginLineNoIncludingDecorator(node),
+                    node.end_lineno,
+                ),
+            )
+
+            self.NewStackFrame()
+            # 将函数的参数添加到当前作用域
+            for arg in node.args.args:  # 获取函数的形参列表
+                self.addDef(arg.arg)
+            # 访问函数体
+            self.generic_visit(node)
+            self.PopStackFrame()
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            self.addDef(
+                node.name,
+                Section(
+                    self.getFunctionOrClassRealBeginLineNoIncludingDecorator(node),
+                    node.end_lineno,
+                ),
+            )
+            self.NewStackFrame()
+            self.generic_visit(node)
+            self.PopStackFrame()
+
+        def visit_Assign(self, node: ast.Assign) -> None:
+            # 处理赋值语句，将变量名添加到当前作用域
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.addDef(target.id, Section(node.lineno, node.end_lineno))
+            self.generic_visit(node)
+
+        def visit_Name(self, node: ast.Name) -> None:
+            # 处理变量使用
+            if isinstance(node.ctx, ast.Load):
+                self.addUse(node.id)
+            elif isinstance(node.ctx, ast.Store):
+                # 如果变量被定义，则添加到当前作用域
+                self.addDef(node.id)
+            self.generic_visit(node)
+
+        def visit_For(self, node: ast.For) -> None:
+            # 进入 for 循环时，将循环变量添加到当前作用域
+            if isinstance(node.target, ast.Name):  # 单个变量的情况
+                self.addDef(node.target.id)
+            elif isinstance(node.target, (ast.Tuple, ast.List)):  # 多个变量的情况
+                for elt in node.target.elts:
+                    if isinstance(elt, ast.Name):
+                        self.addDef(elt.id)
+            self.generic_visit(node)
+
+        def visit_comprehension(self, node: ast.comprehension) -> None:
+            # 进入推导式循环时，将循环变量添加到当前作用域
+            if isinstance(node.target, ast.Name):  # 单个变量的情况
+                self.addDef(node.target.id)
+            elif isinstance(node.target, (ast.Tuple, ast.List)):  # 多个变量的情况
+                for elt in node.target.elts:
+                    if isinstance(elt, ast.Name):
+                        self.addDef(elt.id)
+            self.generic_visit(node)
+
+        def visit_ListComp(self, node: ast.ListComp) -> None:
+            # 列表推导式：创建新的作用域
+            self.NewStackFrame()
+
+            # 提前访问推导式的循环部分，下同
+            for gen in node.generators:
+                self.visit_comprehension(gen)
+
+            # 访问推导式的表达式部分
+            self.generic_visit(node)
+
+            # 弹出推导式的作用域
+            self.PopStackFrame()
+
+        def visit_DictComp(self, node: ast.DictComp) -> None:
+            # 字典推导式：创建新的作用域
+            self.NewStackFrame()
+
+            # 访问推导式的循环部分
+            for gen in node.generators:
+                self.visit_comprehension(gen)
+
+            # 访问推导式的键值表达式部分
+            self.generic_visit(node)
+
+            # 弹出推导式的作用域
+            self.PopStackFrame()
+
+        def visit_SetComp(self, node: ast.SetComp) -> None:
+            # 集合推导式：创建新的作用域
+            self.NewStackFrame()
+
+            # 访问推导式的循环部分
+            for gen in node.generators:
+                self.visit_comprehension(gen)
+
+            # 访问推导式的表达式部分
+            self.generic_visit(node)
+
+            # 弹出推导式的作用域
+            self.PopStackFrame()
+
+        def visit_Import(self, node: ast.Import) -> None:
+            # 处理 import 语句，将模块名添加到当前作用域
+            for alias in node.names:
+                self.addDef(
+                    alias.asname or alias.name.split(".")[0],
+                    Section(node.lineno, node.end_lineno),
+                )
+            self.generic_visit(node)
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            # 处理 from ... import ...，将模块名添加到当前作用域
+            for alias in node.names:
+                name: str = alias.asname or alias.name
+                if name != "*":
+                    self.addDef(
+                        alias.asname or alias.name,
+                        Section(node.lineno, node.end_lineno),
+                    )
+            self.generic_visit(node)
+
+        def find_undefined(self) -> set[str]:
+            return self.undeclUse[-1]
+
+        def find_global_defined(self) -> set[str]:
+            # 检查代码中定义的全局对象
+            return self.defineds[0] - DistillLibraryFromDependency._builtins
+
+        def find_rich_global_defined(self) -> dict[str, RichDefined]:
+            gdefined = self.find_global_defined()
+            return {
+                k: self.richDefineds[0][k]
+                for k in gdefined
+                if k in self.richDefineds[0]
+            }
+
+        def proc_text(self, text: str):
+            tree = ast.parse(text)
+            self.visit(tree)
+            return self
+
+    class DeclarationOptimizedFinder(DeclarationAndDependencyFinder):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self.addDef(node.name, Section(node.lineno, node.end_lineno))
+            # 不访问函数体，因为不关心局部变量。下同
+            # self.generic_visit(node)
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            self.addDef(node.name, Section(node.lineno, node.end_lineno))
+
+    @staticmethod
+    def check_decls_and_undefs(content: str):
+        buf = io.StringIO()
+        oldstdout, sys.stdout = sys.stdout, buf
+
+        finder = DistillLibraryFromDependency.DeclarationAndDependencyFinder()
+        finder.proc_text(content)
+        print(
+            "Undefined variables:", json.dumps(list(finder.find_undefined()), indent=4)
+        )
+        print(
+            "Globally defined variables:",
+            json.dumps(list(finder.find_global_defined()), indent=4),
+        )
+        print("Globally defined variable details:")
+        linedContent = content.splitlines()
+        for k, v in finder.find_rich_global_defined().items():
+            print(f"{k}:")
+            if v.sec is not None:
+                # cuz ast returns line number from 1, but we need it from 0
+                v.sec.start -= 1
+                # -=1, and +=1 cuz end line included
+                # sec.end -= 1
+                for l in v.sec.cut(linedContent):
+                    print(f"\t{l}")
+        sys.stdout = oldstdout
+        return buf.getvalue()
+
+    @staticmethod
+    def DistillLibrary(sourceCode: list[str], library: list[str]):
+        """
+        TODO
+            from utilitypack.util_xxx import *能够正常工作
+                而如果from utilitypack.util_xxx import xxx，那么不会把xxx视为需要定义
+                因为假设库都存在
+                但正是要提取这个库的内容
+                在被分析依赖的代码中，一般会去除utilitypack的导入，所以没问题
+                但如果是utilitypack内，使用了from yyy import xxx的写法，则会跳过其导入
+            优化定义合并
+                将import移动至最前方
+        """
+
+        def find_undefined_variables(s: str) -> set[str]:
+            tree = ast.parse(s)
+            finder = DistillLibraryFromDependency.DeclarationAndDependencyFinder()
+            finder.visit(tree)
+            return finder.find_undefined()
+
+        def find_globally_defined_variables(
+            s: str,
+        ) -> dict[
+            str, DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined
+        ]:
+            tree = ast.parse(s)
+            finder = DistillLibraryFromDependency.DeclarationAndDependencyFinder()
+            finder.visit(tree)
+            return finder.find_rich_global_defined()
+
+        @dataclasses.dataclass
+        class Definition:
+            name: str
+            library_index: int
+            sec: Section
+
+        @dataclasses.dataclass
+        class CodeFile:
+            content: str = ""
+            contentSplitline: list[str] = dataclasses.field(default_factory=list)
+
+            def __post_init__(self):
+                self.contentSplitline = self.content.splitlines()
+
+        sourceCode: list[CodeFile] = [CodeFile(s) for s in sourceCode]
+        library: list[CodeFile] = [CodeFile(s) for s in library]
+
+        libDefined: dict[str, Definition] = {}
+        undef: set[str] = set()
+
+        # 遍历library，提取其中定义的全局对象，转化为definition类，以对象名为键，保存到libDefined:dict中
+        for lib_index, lib in enumerate(library):
+            defined_vars = find_globally_defined_variables(lib.content)
+            for name, richDef in defined_vars.items():
+                # 假设每个库的代码只有一行，实际应用中可能需要更复杂的行号解析
+                if richDef.sec is not None:
+                    richDef.sec.start -= 1
+                libDefined[name] = Definition(name, lib_index, richDef.sec)
+
+        # 遍历sourceCode，提取其中未定义的对象名，保存到undef:list中
+        for file in sourceCode:
+            undef.update(find_undefined_variables(file.content))
+
+        def DefinitionList2DistilledLibrary(defNameList: list[str]):
+            defObjList: list[Definition] = [
+                copy.copy(libDefined[varName]) for varName in defNameList
+            ]
+
+            def overlaps(self: Definition, other: Definition) -> bool:
+                return self.library_index == other.library_index and not (
+                    self.sec.end <= other.sec.start or self.sec.start >= other.sec.end
+                )
+
+            def union(self: Definition, other: Definition):
+                self.name += f"|{defObj.name}"
+                self.sec = Section(
+                    start=min(self.sec.start, other.sec.start),
+                    end=max(self.sec.end, other.sec.end),
+                )
+
+            merged_definitions: list[Definition] = []
+            for defObj in defObjList:
+                merged = False
+                for existing_defObj in merged_definitions:
+                    if overlaps(defObj, existing_defObj):
+                        union(existing_defObj, defObj)
+                        merged = True
+                        break
+                if not merged:
+                    merged_definitions.append(defObj)
+            # 借助库内代码的顺序合理性来辅助保障提取代码的声明顺序的合理性
+            sorted(merged_definitions, key=lambda x: (x.library_index, x.sec.start))
+
+            defCodeList = []
+            for defObj in merged_definitions:
+                defObjSourceCode = defObj.sec.cut(
+                    library[defObj.library_index].contentSplitline
+                )
+                defObjSourceCode[0] = defObjSourceCode[0].strip()
+                defCodeList.append("\n".join(defObjSourceCode))
+            return "\n".join(defCodeList)
+
+        distilledDef = []
+        while True:
+            addedDef = []
+            for var in undef:
+                if var in libDefined:
+                    addedDef.append(var)
+
+            if len(addedDef) == 0:
+                break
+
+            distilledDef = addedDef + distilledDef
+            undef = find_undefined_variables(DefinitionList2DistilledLibrary(addedDef))
+
+        return DefinitionList2DistilledLibrary(distilledDef)
 
 
 ################################################
@@ -637,6 +1066,7 @@ try:
             def isUnary(self):
                 return self in [expparser._OprType.NEG, expparser._OprType.NOT]
 
+        regex_num = r"(?<eff>[0-9]+(?:\.[0-9]+)?)(?:e(?<pow>[+-]?[0-9]+))?"
         _matcherList = [
             # comment "/" out priored the operator "/"
             FSMUtil.RegexpTokenMatcher(exp=r"^//.+?\n", type=_TokenType.COMMENT),
@@ -648,9 +1078,10 @@ try:
                 exp=r"^[*/+\-^=<>&|]", type=_TokenType.OPR
             ),  # single width operator
             FSMUtil.RegexpTokenMatcher(
-                exp=r"^[0-9]+(\.[0-9]+)?", type=_TokenType.NUMLIKE
+                exp=regex_num,
+                type=_TokenType.NUMLIKE,
             ),
-            # cant process r'"\\"' properly, but simply ignore it
+            # cant process r'"\\"' properly, but simply ignore it. cuz \ is not a thing requiring processing
             FSMUtil.RegexpTokenMatcher(exp=r'^".+?(?<!\\)"', type=_TokenType.NUMLIKE),
             FSMUtil.RegexpTokenMatcher(
                 exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=_TokenType.IDR
@@ -1064,8 +1495,8 @@ try:
             "CNum": float,
             "CBool": bool,
             "CList": CList,
-            "clip": lambda x, mini,maxi: np.clip(x,mini,maxi),
-            "relerr": lambda a, b: np.abs(a-b)/(a+EPS),
+            "clip": lambda x, mini, maxi: max(mini, min(x, maxi)),
+            "relerr": lambda a, b: abs(a - b) / (a + EPS),
         }
 
         BasicConstantLib = {

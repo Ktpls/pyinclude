@@ -66,7 +66,7 @@ def batchsizeof(tensor):
     return tensor.shape[0]
 
 
-def setModule(model, path=None, device=None):
+def setModule(model: torch.nn.Module, path=None, device=None, strict=True):
     import os
 
     if device is None:
@@ -79,7 +79,8 @@ def setModule(model, path=None, device=None):
     else:
         print(f"Loading existed nn {path}")
         model.load_state_dict(
-            torch.load(path, map_location=torch.device(device), weights_only=True)
+            torch.load(path, map_location=torch.device(device), weights_only=True),
+            strict=strict,
         )
     return model.to(device)
 
@@ -362,10 +363,16 @@ class ConvNormInsp(torch.nn.Module):
         padding="same",
         norm=None,
         insp=None,
+        dtype=None,
     ):
         super().__init__()
         self.conv = torch.nn.Conv2d(
-            in_channels, out_channels, kernel_size, stride=stride, padding=padding
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            dtype=dtype,
         )
         self.norm = norm
         self.insp = insp
@@ -434,7 +441,6 @@ def ModuleArgDistribution(mod: torch.nn.Module, OnlyWithGrad: bool = True):
     )
 
 
-
 class GlobalAvgPooling(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -474,8 +480,8 @@ class FinalModule(torch.nn.Module):
             lambda x: x.requires_grad is not False, super().parameters(recurse)
         )
 
-    def load(self, path):
-        getmodel(self, path)
+    def load(self, path, *a, **kw):
+        getmodel(self, path, *a, **kw)
         return self
 
     def save(self, path):
@@ -524,3 +530,36 @@ class OnlineGeneratedDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.length
+
+
+@dataclasses.dataclass
+class Deterministic:
+    seed: int
+
+    def do(self):
+        seed = self.seed
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        return self
+
+    def worker_init_fn(self):
+        """
+        use in dataloader like:
+            dataloader = DataLoader(
+                dataset,
+                batch_size=32,
+                shuffle=True,
+                num_workers=4,
+                worker_init_fn=worker_init_fn
+            )
+        """
+
+        def fn(worker_id):
+            np.random.seed(self.seed + worker_id)
+
+        return fn

@@ -2,7 +2,7 @@ import os
 from utilitypack.util_solid import *
 
 
-class Builder:
+class DockerBuilder:
     imgName: str = None
     containerName: str = None
     port: dict[str, str] = None
@@ -38,6 +38,13 @@ class Builder:
 
     def build(self):
         os.system(f"docker build -t {self.imgName} {self.docker_file_dir}")
+        return self
+
+    @CwdProtected
+    def docker_compose_build(self):
+        if self.docker_compose_dir:
+            self._toDir(self.docker_compose_dir)
+        os.system(f"docker compose build")
         return self
 
     @CwdProtected

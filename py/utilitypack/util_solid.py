@@ -26,11 +26,15 @@ import types
 import typing
 import uuid
 import zipfile
+import subprocess
+import os
 
 """
 solid
 """
 EPS = 1e-10
+
+T = typing.TypeVar("T")
 
 
 def DictEq(a: typing.Dict, b: typing.Dict):
@@ -424,15 +428,15 @@ def WriteFile(path, content):
 def AppendFile(path, content):
     EnsureFileDirExists(path)
     with open(path, "ab+") as f:
-        f.write(content.encode("utf-8"))
+        f.write(content)
 
 
-def ReadTextFile(path: str) -> str:
-    return ReadFile(path).decode("utf-8")
+def ReadTextFile(path: str, encoding="utf-8") -> str:
+    return ReadFile(path).decode(encoding)
 
 
-def WriteTextFile(path: str, text: str):
-    WriteFile(path, text.encode("utf-8"))
+def WriteTextFile(path: str, text: str, encoding="utf-8"):
+    WriteFile(path, text.encode(encoding))
 
 
 def GetTimeString():
@@ -501,14 +505,14 @@ class SingleSectionedTimer:
         return self
 
     def start(self):
-        self._starttime = (self.timeCounter)()
+        self._starttime = self.timeCounter()
         return self
 
     def isRunning(self):
         return self._starttime is not None
 
     def get(self) -> float:
-        return (self.timeCounter)() - self._starttime if self.isRunning() else 0
+        return self.timeCounter() - self._starttime if self.isRunning() else 0
 
     def getAndRestart(self) -> float:
         v = self.get()
@@ -554,8 +558,9 @@ class perf_statistic:
         return self
 
     def stop(self):
+        # do it earlier to reduce precision error
+        timeThisRound = self._singled.get()
         if self.isRunning():
-            timeThisRound = self._singled.get()
             self._singled.clear()
             self._stagedTime += timeThisRound
             if self.enable_time_detail:
@@ -583,6 +588,17 @@ class perf_statistic:
             self.ps.stop()
             if self.clearOnExit:
                 self.ps.clear()
+
+    def count_generator_consumption(self, it):
+        while True:
+            try:
+                self.start()
+                ret = next(it)
+                self.stop().countcycle()
+                yield ret
+            except StopIteration:
+                self.stop().countcycle()
+                break
 
 
 class FpsManager:
@@ -1312,10 +1328,18 @@ def Singleton(cls):
     return cls
 
 
-def NormalizeIterableOrSingleArgToIterable(arg):
+def NormalizeIterableOrSingleArgToIterable(arg) -> list:
     if not isinstance(arg, (list, tuple)):
         return [arg]
     return arg
+
+
+class IterableOrSingle(list):
+    Annotation = typing.Iterable[T] | T
+
+    @staticmethod
+    def adapt(data: "IterableOrSingle.Annotation"):
+        return NormalizeIterableOrSingleArgToIterable(data)
 
 
 class DictAsAnObject:
@@ -1681,6 +1705,7 @@ class GSLogger:
         # Create a logger
         if handlers is None:
             handlers = [self.Handlers.ConsoleHandler(), self.Handlers.FileHandler()]
+        handlers = NormalizeIterableOrSingleArgToIterable(handlers)
         logger = logging.getLogger(self.DefaultGlobalSysLoggerName)
         logger.setLevel(self.loggingLevel)
         for h in handlers:
@@ -1862,11 +1887,8 @@ class LazyLoading:
         return value
 
 
-T = typing.TypeVar("T")
-
-
 class Stream(typing.Generic[T]):
-    # copied from superstream!
+    # copied from superstream 0.2.6 !
     R = typing.TypeVar("R")
     K = typing.TypeVar("K")
     U = typing.TypeVar("U")
@@ -1949,6 +1971,22 @@ class Stream(typing.Generic[T]):
         """
         return max(self._stream, key=key, default=default)
 
+    def minmax(
+        self, key: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
+    ) -> typing.Optional[T]:
+        """
+        :param default: use default value when stream is empty
+        :param key: at lease supported __lt__ method
+        """
+        mini = maxi = None
+        for i in self._stream:
+            keyi = key(i)
+            if mini is None or keyi < mini:
+                mini = keyi
+            if maxi is None or keyi > maxi:
+                maxi = keyi
+        return mini, maxi
+
     def find_first(self) -> typing.Optional[T]:
         try:
             return next(self._stream)
@@ -2021,6 +2059,51 @@ class PositionalArgsResolvedAsNamedKwargs:
         ]
         kwargs = {k: modifier(k, v) for k, v in kwargs.items()}
         return args, kwargs
+
+
+class BashProcess:
+    # interactive!
+    proc: subprocess.Popen = None
+    END_OF_COMMAND = "@@@@END_OF_COMMAND@@@@"
+
+    def __init__(self): ...
+
+    def enter(self):
+        self.proc = subprocess.Popen(
+            ["bash"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def exit(self):
+        self.proc.stdin.close()
+        self.proc.terminate()
+        self.proc.wait()
+
+    def __enter__(self):
+        self.enter()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.exit()
+        return False
+
+    def send_command(self, command):
+        command = f"{command}\necho '{self.END_OF_COMMAND}'\n"
+        self.proc.stdin.write(command)
+        self.proc.stdin.flush()
+
+        output = []
+        while True:
+            line = self.proc.stdout.readline()
+            if self.END_OF_COMMAND + "\n" == line:
+                break
+            if not line:
+                break
+            output.append(line.strip())
+        return output
 
 
 ################################################
@@ -2109,6 +2192,9 @@ try:
                     s[self.start : self.end],
                     s[self.end : lineEnd],
                 )
+
+            def toSection(self):
+                return Section(self.start, self.end)
 
         @dataclasses.dataclass
         class GetTokenParam:

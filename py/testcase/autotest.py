@@ -108,6 +108,12 @@ class ExpparserTest(unittest.TestCase):
             "2.0",
         )
 
+    def test_scientific_number(self):
+        self.assertEqual(
+            self.expparseWithEnv("1.1e-2"),
+            "0.011",
+        )
+
 
 class UrlFullResolutionLazyTest(unittest.TestCase):
     class example:
