@@ -1,5 +1,6 @@
 import unittest
 from utilitypack.cold.util_solid import *
+from utilitypack.util_solid import *
 from utilitypack.util_cracked import *
 from utilitypack.util_windows import *
 from utilitypack.util_winkey import *
