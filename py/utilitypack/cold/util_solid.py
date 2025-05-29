@@ -2,6 +2,10 @@ from ..util_solid import *
 import io
 import ast
 import copy
+import multiprocessing
+import math
+import sys
+import uuid
 
 """
 solid
@@ -1572,6 +1576,44 @@ try:
                             case self._TokenType.unexpected:
                                 raise Exception("unexpected token")
             return ast
+
+    def mlambda(s: str) -> typing.Callable:
+        exp = regex.compile(
+            r"^\s*def\s*(?<paraAndType>.*?):\s*?\n?(?<body>.+)$", flags=regex.DOTALL
+        )
+        match = exp.match(s)
+        if not match:
+            raise SyntaxError("function signing syntax error")
+        match = match.groupdict()
+        paraAndType = match["paraAndType"]
+        body = match["body"]
+
+        def fixBodyIndent(body: str):
+            # force at least 1 space indent
+            lines = body.splitlines()
+            lines = [" " + l for l in lines]
+            return "\n".join(lines)
+
+        body = fixBodyIndent(body)
+
+        func = None
+        lambdaName = "_lambda_" + str(uuid.uuid1()).replace("-", "_")
+
+        def _setBackFun(f):
+            nonlocal func
+            func = f
+
+        code = f"""\
+def {lambdaName}{paraAndType}:
+{body}
+_setBackFun({lambdaName})"""
+        caller_frame = sys._getframe(1)
+        exec(
+            code,
+            caller_frame.f_globals,
+            {**caller_frame.f_locals, "_setBackFun": _setBackFun},
+        )
+        return func
 
 except ImportError:
     pass

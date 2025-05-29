@@ -138,7 +138,7 @@ class DockerBuilder:
             "asm": AsmFrontEnd,
         }
         for p in files:
-            if isinstance(p, (tuple, list)):
+            if isinstance(p, (tuple, list)) and len(p) == 2:
                 p, extName = p
             else:
                 extName = UrlFullResolution.of(p).extName

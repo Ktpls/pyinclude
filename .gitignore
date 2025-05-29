@@ -1,5 +1,2 @@
-py/__pycache__
-py/*/__pycache__
-py/*/*/__pycache__
-c/*/target
-c/*/*/target
+__pycache__
+target
