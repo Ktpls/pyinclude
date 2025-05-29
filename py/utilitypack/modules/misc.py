@@ -136,41 +136,6 @@ def EasyWrapper(wrapperLogic=None):
         return toGetWrapperLogic
 
 
-class BulletinBoard:
-    @dataclasses.dataclass
-    class Poster:
-        content: str
-        starttime: float
-        timeout: float
-        overduetime: float
-
-        def __init__(self, content, timeout=10):
-            self.content = content
-            self.starttime = time.perf_counter()
-            self.timeout = timeout
-            self.overduetime = time.perf_counter() + timeout
-
-    def __init__(self, idlecontent):
-        self.idlecontent = idlecontent
-        self.content: list["BulletinBoard.Poster"] = []
-
-    def putup(self, poster: typing.Union[Poster, str]):
-        if type(poster) == str:
-            poster = BulletinBoard.Poster(poster)
-        self.content.append(poster)
-
-    def read(self):
-        self.content = [c for c in self.content if c.overduetime > time.perf_counter()]
-        rctt = list(range(len(self.content)))
-        rctt.reverse()
-        if len(self.content):
-            return ("\n" + "-" * 10 + "\n").join(
-                [self.content[c].content for c in rctt]
-            )
-        else:
-            return self.idlecontent
-
-
 class BeanUtil:
     @dataclasses.dataclass
     class CopyOption:

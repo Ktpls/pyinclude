@@ -1,6 +1,10 @@
 import time
-from utilitypack.util_solid import *
-from utilitypack.util_windows import *
+from utilitypack.util_solid import (
+    Singleton,
+    PreciseSleep,
+    NormalizeIterableOrSingleArgToIterable,
+)
+from ctypes import windll
 
 
 class keycodeWinScanCode:
@@ -315,14 +319,16 @@ class win32conComp:
     VK_BACK_SLASH = VK_OEM_5
     VK_RIGHT_MID_BRACKET = VK_OEM_6
     VK_QUOTE = VK_OEM_7
+
     @staticmethod
-    def KeyOf(key:str):
-        assert len(key)==1
+    def KeyOf(key: str):
+        assert len(key) == 1
         if key.isalpha():
             return ord(key.upper())
         elif key.isdigit():
             return ord(key)
-        raise ValueError(f'Unsupported key: {key}')
+        raise ValueError(f"Unsupported key: {key}")
+
 
 virtualKeyCode2ScanCode = {
     win32conComp.VK_LBUTTON: keycodeWinScanCode.key_LeftMouseButton,
@@ -506,7 +512,6 @@ import ctypes
 SendInput = windll.user32.SendInput
 
 
-
 class KeyBdInput(ctypes.Structure):
     _fields_ = [
         ("wVk", ctypes.c_ushort),
@@ -557,11 +562,11 @@ class Keyboard:
 
     @staticmethod
     def KeyDown(hexKeyCode):
-        '''
+        """
         use like:
             Keyboard.KeyDown(ord("S"))
         to push key "S" down
-        '''
+        """
         extra = ctypes.c_ulong(0)
         ii_ = Input_I()
         ii_.ki = KeyBdInput(0, Vk2Sk().tr(hexKeyCode), 0x0008, 0, ctypes.pointer(extra))

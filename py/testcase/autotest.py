@@ -193,6 +193,7 @@ class MaxRetryTest(unittest.TestCase):
 class HotkeyManagerTest(unittest.TestCase):
     def __init__(self, *arg, **kwarg):
         super().__init__(*arg, **kwarg)
+        from utilitypack.util_app import HotkeyManager
 
         self.CAC = Switch()
         self.CC = Switch()

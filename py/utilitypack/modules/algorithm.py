@@ -3,7 +3,7 @@ import typing
 import heapq
 import itertools
 import collections
-from .misc import *
+from .misc import ComparatorOverloadedByPred
 
 
 @dataclasses.dataclass
@@ -201,4 +201,3 @@ class TaskScheduler:
             if task.time <= t:
                 heapq.heappop(self.tasks)
                 task.action()
-

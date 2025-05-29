@@ -1,4 +1,12 @@
-from ..util_solid import *
+from ..util_solid import (
+    Deduplicate,
+    FSMUtil,
+    NormalizeCrlf,
+    Section,
+    StoppableSomewhat,
+    StoppableThread,
+    FunctionalWrapper,
+)
 import io
 import ast
 import copy
@@ -6,6 +14,16 @@ import multiprocessing
 import math
 import sys
 import uuid
+import typing
+import os
+import random
+import itertools
+import enum
+import traceback
+import functools
+import dataclasses
+import time
+import json
 
 """
 solid
@@ -1464,7 +1482,7 @@ try:
             @staticmethod
             def OptionalFunc(defaultParam: list, func: typing.Callable):
                 def newFunc(*param):
-                    newParam = [Coalesce(a, d) for a, d in zip(param, defaultParam)]
+                    newParam = [a or d for a, d in zip(param, defaultParam)]
                     if len(param) < len(defaultParam):
                         newParam.extend(defaultParam[len(param) :])
                     expparser.Utils.NonOptional.checkParamListIfNonOptional(newParam)

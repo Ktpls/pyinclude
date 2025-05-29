@@ -1,4 +1,4 @@
-from utilitypack.util_solid import *
+import dataclasses
 
 
 @dataclasses.dataclass

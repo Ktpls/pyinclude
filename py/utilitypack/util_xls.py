@@ -1,10 +1,10 @@
-from .util_solid import *
+from .util_solid import NormalizeIterableOrSingleArgToIterable
+import typing
+import openpyxl as opx
 
 """
 xls
 """
-
-import openpyxl as opx
 
 
 def save_list_to_xls(

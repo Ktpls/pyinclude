@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 
+
 class DownloadFileAsync:
     class DownloadCallback:
         def onSuccess(self, url, content): ...

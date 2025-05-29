@@ -1,5 +1,5 @@
 import os
-from utilitypack.util_solid import *
+from utilitypack.util_solid import ReadTextFile, WriteTextFile, UrlFullResolution
 
 
 class DockerBuilder:

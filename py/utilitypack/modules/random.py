@@ -1,4 +1,3 @@
-
 import random
 
 
@@ -8,4 +7,3 @@ def InProbability(p: float) -> bool:
 
 def FlipCoin() -> bool:
     return InProbability(0.5)
-

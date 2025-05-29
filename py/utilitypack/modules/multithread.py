@@ -2,8 +2,9 @@ import concurrent.futures
 import enum
 import threading
 import traceback
-from .misc import *
-from .time import *
+import typing
+from .misc import FunctionalWrapper, EasyWrapper, Switch
+from .time import PreciseSleep
 
 UTS_DEFAULT_THREAD_POOL = concurrent.futures.ThreadPoolExecutor()
 
