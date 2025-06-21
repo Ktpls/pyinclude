@@ -648,28 +648,28 @@ import win32con
 
 
 class mouse:
-    __downk2f = {
+    _downk2f = {
         0: win32con.MOUSEEVENTF_LEFTDOWN,
         1: win32con.MOUSEEVENTF_RIGHTDOWN,
         2: win32con.MOUSEEVENTF_MIDDLEDOWN,
     }
-    __upk2f = {
+    _upk2f = {
         0: win32con.MOUSEEVENTF_LEFTUP,
         1: win32con.MOUSEEVENTF_RIGHTUP,
         2: win32con.MOUSEEVENTF_MIDDLEUP,
     }
 
     @staticmethod
-    def __callevent(dwflags, x=0, y=0):
+    def _callevent(dwflags, x=0, y=0):
         windll.user32.mouse_event(dwflags, x, y, 0, 0)
 
     @staticmethod
     def down(key):
-        mouse.__callevent(mouse.__downk2f[key])
+        mouse._callevent(mouse._downk2f[key])
 
     @staticmethod
     def up(key):
-        mouse.__callevent(mouse.__upk2f[key])
+        mouse._callevent(mouse._upk2f[key])
 
     @staticmethod
     def click(key, interval=0.1):
@@ -679,13 +679,13 @@ class mouse:
 
     @staticmethod
     def mov(x, y):
-        mouse.__callevent(
+        mouse._callevent(
             win32con.MOUSEEVENTF_MOVE + win32con.MOUSEEVENTF_ABSOLUTE, x, y
         )
 
     @staticmethod
     def movr(x, y):
-        mouse.__callevent(win32con.MOUSEEVENTF_MOVE, x, y)
+        mouse._callevent(win32con.MOUSEEVENTF_MOVE, x, y)
 
 
 def mouseup():

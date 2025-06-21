@@ -2,6 +2,7 @@ import enum
 import dataclasses
 import typing
 import regex
+import os
 from ..algorithm import BiptrFindSection
 from ..io import PathNormalize
 from ..misc import LazyLoading, Section
@@ -372,3 +373,7 @@ class UrlFullResolution(LazyLoading):
     @staticmethod
     def of(url: str):
         return UrlFullResolution(url)
+
+    @staticmethod
+    def of_file(filePath: str):
+        return UrlFullResolution(os.path.join(f"file://fake_host/", filePath))

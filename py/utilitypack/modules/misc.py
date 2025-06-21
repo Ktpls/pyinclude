@@ -15,6 +15,8 @@ import functools
 import logging
 import datetime
 import os
+import asyncio
+import concurrent.futures
 from .time import SingleSectionedTimer
 from .io import EnsureDirectoryExists
 
@@ -867,13 +869,15 @@ class BashProcess:
 
 
 T = typing.TypeVar("T")
+F = typing.TypeVar("F")
 
 
 class Stream(typing.Generic[T]):
     # copied from superstream 0.2.6 !
+    # but with some improvements
     R = typing.TypeVar("R")
     K = typing.TypeVar("K")
-    U = typing.TypeVar("U")
+    V = typing.TypeVar("V")
 
     def __init__(self, stream: typing.Iterable[T]):
         self._stream = iter(stream)
@@ -897,6 +901,14 @@ class Stream(typing.Generic[T]):
     def for_each(self, func: typing.Callable[[T], None]) -> None:
         for i in self._stream:
             func(i)
+
+    def peek(self, func: typing.Callable[[T], None]) -> "Stream[T]":
+        def proc(_stream: Stream[T]) -> typing.Generator[T, None, None]:
+            for i in _stream:
+                func(i)
+                yield i
+
+        return Stream(proc(self._stream))
 
     def distinct(self):
         return Stream(list(dict.fromkeys(self._stream)))
@@ -1000,17 +1012,80 @@ class Stream(typing.Generic[T]):
         return set(self._stream)
 
     def to_dict(
-        self, k: typing.Callable[[T], K], v: typing.Callable[[T], U]
-    ) -> dict[K, U]:
+        self, k: typing.Callable[[T], K], v: typing.Callable[[T], V]
+    ) -> dict[K, V]:
         return {k(i): v(i) for i in self._stream}
 
     def to_map(
-        self, k: typing.Callable[[T], K], v: typing.Callable[[T], U]
-    ) -> dict[K, U]:
+        self, k: typing.Callable[[T], K], v: typing.Callable[[T], V]
+    ) -> dict[K, V]:
         return self.to_dict(k, v)
 
     def collect(self, func: typing.Callable[[typing.Iterable[T]], R]) -> R:
         return func(self._stream)
+
+    def gather_async(
+        self: "Stream[typing.Coroutine[typing.Any, typing.Any, T]]",
+        concurrent_limit: int = None,
+    ) -> "Stream[T]":
+        """
+        use like:
+            async def task(x):
+                await asyncio.sleep(1)
+                return x
+            Stream(range(10)).map(task).gather_async(limit).count()
+        """
+
+        async def gather(_stream):
+            return await asyncio.gather(*_stream)
+
+        def run(_stream):
+            yield from asyncio.run(gather(_stream))
+
+        if concurrent_limit is not None:
+            semaphore = asyncio.Semaphore(concurrent_limit)
+
+            async def semaphored_task(
+                task: typing.Coroutine[typing.Any, typing.Any, T],
+            ):
+                async with semaphore:
+                    return await task
+
+        else:
+
+            async def semaphored_task(
+                task: typing.Coroutine[typing.Any, typing.Any, T],
+            ):
+                return await task
+
+        return self.map(semaphored_task).wrap_iterator(run)
+
+    def gather_thread_future(
+        self: "Stream[concurrent.futures.Future[T]]",
+    ) -> "Stream[T]":
+        """
+        use like:
+            def costly_function():
+                v = 0
+                for i in range(50000000):
+                    v += 1
+                return v
+            pool = concurrent.futures.ThreadPoolExecutor()
+            r = (
+                Stream(range(10))
+                .map(lambda x: pool.submit(costly_function))
+                .gather_thread_future()
+                .collect(list)
+            )
+        """
+        return self.wrap_iterator(concurrent.futures.as_completed).map(
+            lambda x: x.result()
+        )
+
+    def wrap_iterator(
+        self, iterator: typing.Callable[[typing.Iterable[T]], typing.Iterable[R]]
+    ) -> "Stream[R]":
+        return Stream(iterator(self._stream))
 
 
 @Singleton

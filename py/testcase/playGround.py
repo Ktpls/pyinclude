@@ -27,3 +27,7 @@ def HotkeyManagerDemo():
     while True:
         fpsm.WaitUntilNextFrame()
         hkm.dispatchMessage()
+@RunThis
+def UFR():
+    e=UrlFullResolution.of('docker-compose.yaml').extName
+    print(e)

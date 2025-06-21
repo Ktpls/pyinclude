@@ -193,76 +193,6 @@ class Pipe:
         return self.get().__repr__()
 
 
-class Stream:
-    content: list
-    actions: list
-
-    def __init__(self, iter: list | tuple | dict) -> None:
-        if isinstance(iter, (list, tuple)):
-            self.content = iter
-        elif isinstance(iter, dict):
-            self.content = iter.items()
-        else:
-            raise TypeError("iter must be list|tuple|dict")
-
-    def sort(self, pred: typing.Callable[[typing.Any, typing.Any], int]):
-        self.content.sort(key=functools.cmp_to_key(pred))
-        return self
-
-    def peek(self, pred: typing.Callable[[typing.Any], None]):
-        for i in self.content:
-            pred(i)
-        return self
-
-    def filter(self, pred: typing.Callable[[typing.Any], bool]):
-        self.content = list(filter(pred, self.content))
-        return self
-
-    def map(self, pred: typing.Callable[[typing.Any], typing.Any]):
-        self.content = list(map(pred, self.content))
-        return self
-
-    def flatMap(self, pred: "typing.Callable[[typing.Any],Stream]"):
-        self.content = list(
-            itertools.chain.from_iterable([s.content for s in map(pred, self.content)])
-        )
-        return self
-
-    def distinct(self):
-        self.content = Deduplicate(self.content)
-        return self
-
-    class Collector:
-        def __init__(self, collectImpl):
-            self.collectImpl = collectImpl
-
-        def do(self, stream):
-            return self.collectImpl(stream)
-
-        @staticmethod
-        def toList():
-            return Stream.Collector(lambda stream: list(stream.content))
-
-        @staticmethod
-        def toDict(keyPred, valuePred):
-            return Stream.Collector(
-                lambda stream: {keyPred(i): valuePred(i) for i in stream.content}
-            )
-
-        @staticmethod
-        def groupBy(keyPred):
-            return Stream.Collector(
-                lambda stream: {
-                    key: list(group)
-                    for key, group in itertools.groupby(
-                        sorted(stream.content, key=keyPred), key=keyPred
-                    )
-                }
-            )
-
-    def collect(self, collector: "Stream.Collector"):
-        return collector.do(self)
-
 
 def LongDelay(t, interval=0.5):
     round = math.ceil(t / interval)
@@ -342,10 +272,27 @@ class DistillLibraryFromDependency:
         "exit",
     }
 
+    class DefinitionType(enum.Enum):
+        default = enum.auto()
+        import_ = enum.auto()
+        define = enum.auto()
+
+        def priority(self):
+            match self:
+                case DistillLibraryFromDependency.DefinitionType.import_:
+                    return 0
+                case DistillLibraryFromDependency.DefinitionType.default:
+                    return 1
+                case DistillLibraryFromDependency.DefinitionType.define:
+                    return 2
+                case _:
+                    raise ValueError(f"Unknown definition type: {self}")
+
     class DeclarationAndDependencyFinder(ast.NodeVisitor):
         @dataclasses.dataclass
         class RichDefined:
             name: str
+            type: "DistillLibraryFromDependency.DefinitionType"
             sec: Section = None
 
         def __init__(self):
@@ -381,11 +328,19 @@ class DistillLibraryFromDependency:
             self.richDefineds.pop()
             self.definedInCurStackFrameFreshNow()
 
-        def addDef(self, s: str, sec: Section = None) -> None:
+        def addDef(
+            self,
+            s: str,
+            sec: Section = None,
+            type: "DistillLibraryFromDependency.DefinitionType" = None,
+        ) -> None:
+            type = type or DistillLibraryFromDependency.DefinitionType.default
             if s not in self.definedInCurStackFrame():
                 self.richDefineds[-1][s] = (
                     DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined(
-                        s, sec
+                        s,
+                        type,
+                        sec,
                     )
                 )
             self.defineds[-1].add(s)
@@ -525,6 +480,7 @@ class DistillLibraryFromDependency:
                 self.addDef(
                     alias.asname or alias.name.split(".")[0],
                     Section(node.lineno, node.end_lineno),
+                    DistillLibraryFromDependency.DefinitionType.import_,
                 )
             self.generic_visit(node)
 
@@ -631,6 +587,7 @@ class DistillLibraryFromDependency:
             name: str
             library_index: int
             sec: Section
+            type: DistillLibraryFromDependency.DefinitionType
 
         @dataclasses.dataclass
         class CodeFile:
@@ -643,6 +600,7 @@ class DistillLibraryFromDependency:
         sourceCode: list[CodeFile] = [CodeFile(s) for s in sourceCode]
         library: list[CodeFile] = [CodeFile(s) for s in library]
 
+        # 可能找到多处定义
         libDefined: dict[str, Definition] = {}
         undef: set[str] = set()
 
@@ -653,7 +611,13 @@ class DistillLibraryFromDependency:
                 # 假设每个库的代码只有一行，实际应用中可能需要更复杂的行号解析
                 if richDef.sec is not None:
                     richDef.sec.start -= 1
-                libDefined[name] = Definition(name, lib_index, richDef.sec)
+                def_ = Definition(name, lib_index, richDef.sec, richDef.type)
+                if name not in libDefined:
+                    libDefined[name] = def_
+                else:
+                    old = libDefined[name]
+                    if old.type.priority() < def_.type.priority():
+                        libDefined[name] = def_
 
         # 遍历sourceCode，提取其中未定义的对象名，保存到undef:list中
         for file in sourceCode:

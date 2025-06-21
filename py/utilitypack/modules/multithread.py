@@ -85,6 +85,11 @@ class StoppableThread(StoppableSomewhat):
     derivate from it and override foo()
     """
 
+    class State(enum.Enum):
+        running = enum.auto()
+        stopping = enum.auto()
+        stopped = enum.auto()
+
     # TODO give option to handle error by user. thats for wtutily system to log error
     def __init__(
         self,
@@ -93,8 +98,7 @@ class StoppableThread(StoppableSomewhat):
         pool: concurrent.futures.ThreadPoolExecutor = None,
     ) -> None:
         super().__init__(strategy_runonrunning, strategy_error)
-        self.running: bool = False
-        self.stopsignal: bool = True
+        self.state: StoppableThread.State = StoppableThread.State.stopped
         self.pool: concurrent.futures.ThreadPoolExecutor = (
             pool or UTS_DEFAULT_THREAD_POOL
         )
@@ -105,7 +109,7 @@ class StoppableThread(StoppableSomewhat):
         raise NotImplementedError("should never run without overriding foo")
 
     def isRunning(self) -> bool:
-        return self.running
+        return self.state == StoppableThread.State.running
 
     @FunctionalWrapper
     def go(self, *arg, **kw) -> None:
@@ -125,8 +129,6 @@ class StoppableThread(StoppableSomewhat):
                 == StoppableThread.StrategyRunOnRunning.skip_and_return
             ):
                 return
-        self.running = True
-        self.stopsignal = False
 
         def call() -> None:
             """
@@ -144,20 +146,22 @@ class StoppableThread(StoppableSomewhat):
                 elif self.strategy_error == StoppableThread.StrategyError.ignore:
                     pass
             finally:
-                self.running = False
+                self.state = StoppableThread.State.stopped
 
+        self.state = StoppableThread.State.running
         self.submit = self.pool.submit(call)
 
     def _signal_stop(self):
         if self.submit is None:
             return
-        self.stopsignal = True
+        if self.state != StoppableThread.State.running:
+            return
+        self.state = StoppableThread.State.stopping
 
     def _wait_until_stop(self):
         if self.submit is None:
             return
         self.submit.result()
-        self.running = False
         # TODO consider do not remove future after finished, so we can get its result
         self.submit = None
 
@@ -176,7 +180,7 @@ class StoppableThread(StoppableSomewhat):
             t._wait_until_stop()
 
     def timeToStop(self) -> bool:
-        return self.stopsignal
+        return self.state != StoppableThread.State.running
 
 
 class Stage:
