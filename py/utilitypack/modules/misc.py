@@ -870,14 +870,14 @@ class BashProcess:
 
 T = typing.TypeVar("T")
 F = typing.TypeVar("F")
+R = typing.TypeVar("R")
+K = typing.TypeVar("K")
+V = typing.TypeVar("V")
 
 
 class Stream(typing.Generic[T]):
     # copied from superstream 0.2.6 !
     # but with some improvements
-    R = typing.TypeVar("R")
-    K = typing.TypeVar("K")
-    V = typing.TypeVar("V")
 
     def __init__(self, stream: typing.Iterable[T]):
         self._stream = iter(stream)
@@ -1163,3 +1163,10 @@ class GSLogger:
             return ret
 
         return f2
+
+
+def SuccessOrNone(f: typing.Callable[[], R]) -> typing.Optional[R]:
+    try:
+        return f()
+    except:
+        return None
