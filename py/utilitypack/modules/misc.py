@@ -1,24 +1,23 @@
-import typing
+import asyncio
+import collections
+import concurrent.futures
+import dataclasses
+import datetime
+import enum
 import functools
 import inspect
-import time
-import dataclasses
-import types
-import enum
+import itertools
 import json
+import logging
+import os
 import re
 import subprocess
+import time
+import types
 import typing
-import itertools
-import collections
-import functools
-import logging
-import datetime
-import os
-import asyncio
-import concurrent.futures
-from .time import SingleSectionedTimer
+
 from .io import EnsureDirectoryExists
+from .time import SingleSectionedTimer
 
 EPS = 1e-10
 
@@ -673,7 +672,10 @@ def Decode(*args):
 
 class MaxRetry:
     def __init__(
-        self, succCond: typing.Callable[[], bool], maxRetry: int = 3, errOnMaxRetry=True
+        self,
+        maxRetry: int = 3,
+        succCond: typing.Callable[[], bool] = None,
+        errOnMaxRetry=True,
     ):
         self.succCond = succCond
         self.maxRetry = maxRetry
@@ -690,7 +692,7 @@ class MaxRetry:
                 raise RuntimeError("Max retry reached")
             else:
                 raise StopIteration
-        if self.succCond():
+        if self.succCond and self.succCond():
             self.isSuccessed = True
             raise StopIteration
         self.i += 1
@@ -878,9 +880,50 @@ V = typing.TypeVar("V")
 class Stream(typing.Generic[T]):
     # copied from superstream 0.2.6 !
     # but with some improvements
+    class Collectors:
+        @staticmethod
+        def join(separator: str = ""):
+            return lambda it: separator.join(it)
 
-    def __init__(self, stream: typing.Iterable[T]):
+        @staticmethod
+        def ndarray():
+            import numpy as np
+
+            return lambda it: np.array(it)
+
+        list = list
+        set = set
+
+    @staticmethod
+    def UnpackedCalling(
+        func: typing.Callable[..., R],
+    ) -> typing.Callable[[typing.Tuple[T]], R]:
+        return lambda x: func(*x)
+
+    upcl = UnpackedCalling
+
+    def __init__(self, stream: typing.Iterable[T], always_unpack: bool = False):
         self._stream = iter(stream)
+        self._always_unpack = always_unpack
+
+    def clone(self, stream: typing.Iterable[T] = None) -> "Stream[T]":
+        return Stream(stream=stream or self._stream, always_unpack=self._always_unpack)
+
+    def always_unpack(self, always_unpack: bool = True) -> typing.Self:
+        self._always_unpack = always_unpack
+        return self
+
+    def _unpacking_considered_pred(
+        self,
+        pred: typing.Callable[[T], bool] | typing.Callable[..., R],
+        unpacking: bool = None,
+    ) -> typing.Callable[[T], bool]:
+        if unpacking is None:
+            unpacking = self._always_unpack
+        if self._always_unpack:
+            return Stream.UnpackedCalling(pred)
+        else:
+            return pred
 
     def __iter__(self):
         return self._stream
@@ -890,31 +933,46 @@ class Stream(typing.Generic[T]):
         return Stream(args)
 
     def map(self, func: typing.Callable[[T], R]) -> "Stream[R]":
-        return Stream(map(func, self._stream))
+        func = self._unpacking_considered_pred(func)
+        return self.clone(map(func, self._stream))
 
     def flat_map(self, func: typing.Callable[[T], "Stream[R]"]) -> "Stream[R]":
-        return Stream(itertools.chain.from_iterable(map(func, self._stream)))
+        func = self._unpacking_considered_pred(func)
+        return self.clone(itertools.chain.from_iterable(map(func, self._stream)))
 
     def filter(self, func: typing.Callable[[T], bool]) -> "Stream[T]":
-        return Stream(filter(func, self._stream))
+        func = self._unpacking_considered_pred(func)
+        return self.clone(filter(func, self._stream))
 
     def for_each(self, func: typing.Callable[[T], None]) -> None:
+        func = self._unpacking_considered_pred(func)
         for i in self._stream:
             func(i)
 
     def peek(self, func: typing.Callable[[T], None]) -> "Stream[T]":
+        func = self._unpacking_considered_pred(func)
+
         def proc(_stream: Stream[T]) -> typing.Generator[T, None, None]:
             for i in _stream:
                 func(i)
                 yield i
 
-        return Stream(proc(self._stream))
+        return self.clone(proc(self._stream))
 
-    def distinct(self):
-        return Stream(list(dict.fromkeys(self._stream)))
+    def distinct(self, pred: typing.Callable[[T], R] = lambda x: x) -> "Stream[T]":
+        def generator(_stream: Stream[T]) -> typing.Generator[T, None, None]:
+            existeds = set()
+            for i in _stream:
+                if pred(i) not in existeds:
+                    existeds.add(pred(i))
+                    yield i
 
-    def sorted(self, key=None, reverse=False) -> "Stream[T]":
-        return Stream(sorted(self._stream, key=key, reverse=reverse))
+        return self.clone(generator(self._stream))
+
+    def sorted(self, func=None, reverse=False) -> "Stream[T]":
+        if func:
+            func = self._unpacking_considered_pred(func)
+        return self.clone(sorted(self._stream, key=func, reverse=reverse))
 
     def count(self) -> int:
         cnt = itertools.count()
@@ -924,15 +982,17 @@ class Stream(typing.Generic[T]):
     def sum(self) -> "T":
         return sum(self._stream)
 
-    def group_by(self, classifier: typing.Callable[[T], K]) -> dict[K, list[T]]:
+    def group_by(self, func: typing.Callable[[T], K]) -> dict[K, list[T]]:
+        func = self._unpacking_considered_pred(func)
         groups = {}
         for i in self._stream:
-            groups.setdefault(classifier(i), []).append(i)
+            groups.setdefault(func(i), []).append(i)
         return groups
 
     def reduce(
         self, func: typing.Callable[[T, T], T], initial: T = None
     ) -> typing.Optional[T]:
+        func = self._unpacking_considered_pred(func)
         if initial is not None:
             return functools.reduce(func, self._stream, initial)
         else:
@@ -942,39 +1002,42 @@ class Stream(typing.Generic[T]):
                 return None
 
     def limit(self, max_size: int) -> "Stream[T]":
-        return Stream(itertools.islice(self._stream, max_size))
+        return self.clone(itertools.islice(self._stream, max_size))
 
     def skip(self, n: int) -> "Stream[T]":
-        return Stream(itertools.islice(self._stream, n, None))
+        return self.clone(itertools.islice(self._stream, n, None))
 
     def min(
-        self, key: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
+        self, func: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
     ) -> typing.Optional[T]:
         """
         :param default: use default value when stream is empty
         :param key: at lease supported __lt__ method
         """
-        return min(self._stream, key=key, default=default)
+        func = self._unpacking_considered_pred(func)
+        return min(self._stream, key=func, default=default)
 
     def max(
-        self, key: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
+        self, func: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
     ) -> typing.Optional[T]:
         """
         :param default: use default value when stream is empty
         :param key: at lease supported __lt__ method
         """
-        return max(self._stream, key=key, default=default)
+        func = self._unpacking_considered_pred(func)
+        return max(self._stream, key=func, default=default)
 
     def minmax(
-        self, key: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
+        self, func: typing.Callable[[T], typing.Any] = lambda x: x, default: T = None
     ) -> typing.Optional[T]:
         """
         :param default: use default value when stream is empty
         :param key: at lease supported __lt__ method
         """
+        func = self._unpacking_considered_pred(func)
         mini = maxi = None
         for i in self._stream:
-            keyi = key(i)
+            keyi = func(i)
             if mini is None or keyi < mini:
                 mini = keyi
             if maxi is None or keyi > maxi:
@@ -997,12 +1060,15 @@ class Stream(typing.Generic[T]):
         :param func:
         :return:
         """
+        func = self._unpacking_considered_pred(func)
         return any(map(func, self._stream))
 
     def all_match(self, func: typing.Callable[[T], bool]) -> bool:
+        func = self._unpacking_considered_pred(func)
         return all(map(func, self._stream))
 
     def none_match(self, func: typing.Callable[[T], bool]) -> bool:
+        func = self._unpacking_considered_pred(func)
         return not self.any_match(func)
 
     def to_list(self) -> list[T]:
@@ -1014,6 +1080,8 @@ class Stream(typing.Generic[T]):
     def to_dict(
         self, k: typing.Callable[[T], K], v: typing.Callable[[T], V]
     ) -> dict[K, V]:
+        k = self._unpacking_considered_pred(k)
+        v = self._unpacking_considered_pred(v)
         return {k(i): v(i) for i in self._stream}
 
     def to_map(
@@ -1025,9 +1093,9 @@ class Stream(typing.Generic[T]):
         return func(self._stream)
 
     def gather_async(
-        self: "Stream[typing.Coroutine[typing.Any, typing.Any, T]]",
+        self: "Stream[types.CoroutineType[typing.Any, typing.Any, R]]",
         concurrent_limit: int = None,
-    ) -> "Stream[T]":
+    ) -> "Stream[R]":
         """
         use like:
             async def task(x):
@@ -1046,16 +1114,16 @@ class Stream(typing.Generic[T]):
             semaphore = asyncio.Semaphore(concurrent_limit)
 
             async def semaphored_task(
-                task: typing.Coroutine[typing.Any, typing.Any, T],
-            ):
+                task: types.CoroutineType[typing.Any, typing.Any, R],
+            ) -> R:
                 async with semaphore:
                     return await task
 
         else:
 
             async def semaphored_task(
-                task: typing.Coroutine[typing.Any, typing.Any, T],
-            ):
+                task: types.CoroutineType[typing.Any, typing.Any, R],
+            ) -> R:
                 return await task
 
         return self.map(semaphored_task).wrap_iterator(run)
@@ -1085,7 +1153,7 @@ class Stream(typing.Generic[T]):
     def wrap_iterator(
         self, iterator: typing.Callable[[typing.Iterable[T]], typing.Iterable[R]]
     ) -> "Stream[R]":
-        return Stream(iterator(self._stream))
+        return self.clone(iterator(self._stream))
 
 
 @Singleton

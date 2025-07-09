@@ -10,7 +10,7 @@ numpy
 import numpy as np
 import hashlib
 
-np.seterr(all="raise")
+np.seterr(under="ignore")
 
 EPS = 1e-10
 LOGEPS = -10

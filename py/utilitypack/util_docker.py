@@ -1,10 +1,14 @@
 import os
+import subprocess
 from utilitypack.util_solid import (
     ReadTextFile,
     WriteTextFile,
     UrlFullResolution,
     Stream,
+    AllFileIn,
 )
+import types
+from utilitypack.cold.util_solid import DistillLibraryFromDependency
 
 
 class DockerBuilder:
@@ -43,76 +47,90 @@ class DockerBuilder:
         os.chdir(self.cwd), os.chdir(path)
 
     def build(self, imgName=None, target=None):
-        cmd = []
-        cmd.append("docker build")
+        cmd = ["docker", "build"]
         if target:
-            cmd.append(f"--target {target}")
+            cmd.extend(["--target", target])
         if imgName := imgName or self.imgName:
-            cmd.append(f"-t {imgName}")
+            cmd.extend(["-t", imgName])
         if self.dockerfile_path:
-            cmd.append(f"-f {self.dockerfile_path}")
-        cmd.append(f"{self.dockerfile_dir or '.'}")
-        cmd = " ".join(cmd)
-        os.system(cmd)
+            cmd.extend(["-f", self.dockerfile_path])
+        cmd.append(self.dockerfile_dir or ".")
+        subprocess.run(cmd, check=True)
         return self
 
     @CwdProtected
     def docker_compose_build(self):
         if self.dockercompose_dir:
             self._toDir(self.dockercompose_dir)
-        os.system(f"docker compose build")
+        subprocess.run(["docker", "compose", "build"], check=True)
         return self
 
     @CwdProtected
     def recompose(self):
+        return self.compose_down().compose_up()
+
+    @CwdProtected
+    def compose_down(self):
         if self.dockercompose_dir:
             self._toDir(self.dockercompose_dir)
-        os.system("docker compose down")
-        os.system("docker compose up -d")
+        subprocess.run(["docker", "compose", "down"], check=True)
+        return self
+
+    @CwdProtected
+    def compose_up(self):
+        if self.dockercompose_dir:
+            self._toDir(self.dockercompose_dir)
+        subprocess.run(["docker", "compose", "up", "-d"], check=True)
         return self
 
     def export(self, imgName=None, img_file_name=None):
         img_file_name = img_file_name or self.img_file_name
-        os.system(f"docker save -o {img_file_name} {imgName or self.imgName}")
+        subprocess.run(
+            ["docker", "save", "-o", img_file_name, imgName or self.imgName], check=True
+        )
         return self
 
     def stopcontainer(self):
         try:
-            os.system(f"docker stop {self.containerName}")
+            subprocess.run(["docker", "stop", self.containerName], check=True)
         except:
             pass
         return self
 
     def rmcontainer(self):
         try:
-            os.system(f"docker rm {self.containerName}")
+            subprocess.run(["docker", "rm", self.containerName], check=True)
         except:
             pass
         return self
 
     def run(self):
         params = [
-            f"-it -d --name {self.containerName}",
+            "-it",
+            "-d",
+            f"--name={self.containerName}",
         ]
         if self.port:
-            params.extend([f"-p {k}:{v}" for k, v in self.port.items()])
+            for k, v in self.port.items():
+                params.append(f"-p{k}:{v}")
         if self.mount:
-            params.extend([f"-v {k}:{v}" for k, v in self.mount.items()])
+            for k, v in self.mount.items():
+                params.append(f"-v{k}:{v}")
         if self.env:
-            params.extend([f"-e {k}={v}" for k, v in self.env.items()])
+            for k, v in self.env.items():
+                params.append(f"-e{k}={v}")
         if self.network:
-            params.extend([f"--network {v}" for v in self.network])
-        params.append(f"{self.imgName}")
+            for v in self.network:
+                params.extend(["--network", v])
+        params.append(self.imgName)
         if self.runArg:
             params.extend(self.runArg)
 
-        cmd = " ".join(params)
-        cmd = f"docker run {cmd}"
-        os.system(cmd)
+        subprocess.run(["docker", "run"] + params, check=True)
         return self
 
     def restart(self):
-        os.system(f"docker restart {self.containerName}")
+        subprocess.run(["docker", "restart", self.containerName], check=True)
         return self
 
     def preproc_pd(self, files: list[str | tuple[str, str]], pdenv: dict = None):
@@ -170,14 +188,44 @@ class DockerBuilder:
             print(f"File edited: {p}")
         return self
 
+    def DistillUtils(
+        self, your_project: str, util_module: types.ModuleType, target_file: str
+    ):
+        target_file_not_exists = not os.path.exists(target_file)
+        uts_copy = DistillLibraryFromDependency.DistillLibrary(
+            Stream(AllFileIn(your_project))
+            .filter(lambda x: not x.startswith("_"))
+            .filter(lambda x: x.endswith(".py"))
+            .filter(
+                lambda x: target_file_not_exists or not os.path.samefile(x, target_file)
+            )
+            .sorted()
+            .map(lambda x: ReadTextFile(x)),
+            Stream(AllFileIn(UrlFullResolution.of(util_module.__file__).folder))
+            .filter(lambda x: not x.startswith("_") and x.endswith(".py"))
+            .sorted()
+            .map(lambda x: ReadTextFile(x)),
+        )
+        uts_copy = (
+            """\
+try:from utilitypack.util_solid import *
+except:...
+"""
+            + uts_copy
+        )
+        WriteTextFile(target_file, uts_copy)
+        return self
 
-def ExportDotEnvToDockerCompose(env_file: str, indent:str='  ') -> str:
+
+def ExportDotEnvToDockerCompose(env_file: str, indent: str = "  ") -> str:
     import re
 
     r = (
         Stream(
             re.finditer(
-                r"^(?P<k>[A-Za-z0-9_]+)=(?P<v>.*?)(?: #.*)?$", ReadTextFile(env_file), re.MULTILINE
+                r"^(?P<k>[A-Za-z0-9_]+)=(?P<v>.*?)(?: #.*)?$",
+                ReadTextFile(env_file),
+                re.MULTILINE,
             )
         )
         .map(lambda x: "%s: ${%s:-%s}" % (x.group("k"), x.group("k"), x.group("v")))

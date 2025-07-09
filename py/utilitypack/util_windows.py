@@ -156,6 +156,15 @@ class fullScrHUD:
         lt: typing.List[int]
         content: np.ndarray = None
 
+        def update_content(self):
+            # passive and synchronous updating method
+            # only called when gui rendering region
+            ...
+
+        def claim_content_nontransparent(self):
+            if self.content is not None:
+                self.content = np.maximum(self.content, 1)
+
     def __init__(self, rect=[0, 0, 1920, 1080]) -> None:
         self.rect = rect
         self.wh = [rect[2] - rect[0], rect[3] - rect[1]]
@@ -264,20 +273,27 @@ class fullScrHUD:
         time.sleep(1)
 
     @FunctionalWrapper
-    def writecontent(self, lt, content):
-        # TODO: considering mixing instead of writting
+    def writecontent(self, lt: typing.Union[tuple, list, np.ndarray], content):
+        # 参数验证
+        assert isinstance(lt, (tuple, list, np.ndarray))
+        assert len(lt) == 2
+        assert len(content.shape) == 3
+        l, t = map(int, lt)
+
+        # 获取目标尺寸
         w, h = self.wh
-        l, t = lt
+        # 验证输入内容维度
+
         contentH, contentW, depth = content.shape
-        if contentH > h - t:
-            content = content[: h - t, :, :]
-        if contentW > w - l:
-            content = content[:, : w - l, :]
+        # 计算实际绘制区域
+        draw_h = min(contentH, h - t)
+        draw_w = min(contentW, w - l)
+
         self.m2draw[
-            t : t + contentH,
-            l : l + contentW,
+            t : t + draw_h,
+            l : l + draw_w,
             :depth,
-        ] = content
+        ] = content[:draw_h, :draw_w, :]
 
     @FunctionalWrapper
     def clear(self):
@@ -316,6 +332,7 @@ class fullScrHUD:
         self.clear()
 
         for r in self.regions:
+            r.update_content()
             if r.content is not None:
                 self.writecontent(r.lt, r.content)
 

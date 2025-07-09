@@ -1,7 +1,7 @@
 import flask
 
 
-class SimpleServer:
+class MiniumSimpleServer:
     def __init__(self, port):
         self.port = port
         self.app = flask.Flask(__name__)
