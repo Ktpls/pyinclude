@@ -877,7 +877,7 @@ K = typing.TypeVar("K")
 V = typing.TypeVar("V")
 
 
-class Stream(typing.Generic[T]):
+class Stream(typing.Generic[T], typing.Iterable[T]):
     # copied from superstream 0.2.6 !
     # but with some improvements
     class Collectors:
@@ -893,6 +893,17 @@ class Stream(typing.Generic[T]):
 
         list = list
         set = set
+        set_union = lambda x: set().union(x)
+
+        @staticmethod
+        def dict_union():
+            def _(x: typing.Iterable[dict[K, V]]):
+                r = {}
+                for i in x:
+                    r.update(i)
+                return r
+
+            return _
 
     @staticmethod
     def UnpackedCalling(
@@ -1154,6 +1165,10 @@ class Stream(typing.Generic[T]):
         self, iterator: typing.Callable[[typing.Iterable[T]], typing.Iterable[R]]
     ) -> "Stream[R]":
         return self.clone(iterator(self._stream))
+
+    def reversed(self) -> "Stream[T]":
+        # not lazy, maybe costly
+        return self.clone(reversed(list(self._stream)))
 
 
 @Singleton

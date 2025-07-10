@@ -6,6 +6,7 @@ from ..util_solid import (
     StoppableSomewhat,
     StoppableThread,
     FunctionalWrapper,
+    Stream,
 )
 import io
 import ast
@@ -193,7 +194,6 @@ class Pipe:
         return self.get().__repr__()
 
 
-
 def LongDelay(t, interval=0.5):
     round = math.ceil(t / interval)
     for i in range(round):
@@ -278,55 +278,113 @@ class DistillLibraryFromDependency:
         define = enum.auto()
 
         def priority(self):
-            match self:
-                case DistillLibraryFromDependency.DefinitionType.import_:
-                    return 0
-                case DistillLibraryFromDependency.DefinitionType.default:
-                    return 1
-                case DistillLibraryFromDependency.DefinitionType.define:
-                    return 2
-                case _:
-                    raise ValueError(f"Unknown definition type: {self}")
+            return {
+                DistillLibraryFromDependency.DefinitionType.import_: 0,
+                DistillLibraryFromDependency.DefinitionType.default: 1,
+                DistillLibraryFromDependency.DefinitionType.define: 2,
+            }[self]
 
     class DeclarationAndDependencyFinder(ast.NodeVisitor):
         @dataclasses.dataclass
         class RichDefined:
             name: str
-            type: "DistillLibraryFromDependency.DefinitionType"
+            file: str = None
+            type: "DistillLibraryFromDependency.DefinitionType" = dataclasses.field(
+                default_factory=lambda: (
+                    DistillLibraryFromDependency.DefinitionType.default
+                )
+            )
             sec: Section = None
+            minium_portable_body: Section = None
+
+        @dataclasses.dataclass
+        class _StackFrame:
+            cur_frame_newly_defined: dict[
+                str,
+                "DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined",
+            ] = dataclasses.field(default_factory=dict)
+            all: dict[
+                str,
+                "DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined",
+            ] = dataclasses.field(default_factory=dict)
+            last_frame: "DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame" = (None)
+            undefined_usage: set[str] = dataclasses.field(default_factory=set)
+
+            def define(
+                self,
+                d: "DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined",
+            ):
+                self.all[d.name] = d
+                self.cur_frame_newly_defined[d.name] = d
+
+            def _follow_up_stack(self):
+                f = self
+                while f:
+                    yield f
+                    f = self.last_frame
+
+            def all_recalced(self):
+                self.all = (
+                    Stream(self._follow_up_stack())
+                    .reversed()
+                    .map(lambda x: x.cur_frame_newly_defined)
+                    .collect(Stream.Collectors.dict_union())
+                )
+                return self
+
+            @staticmethod
+            def InitFromParentStack(
+                parentStack: "DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame",
+            ):
+                return DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame(
+                    all=copy.copy(parentStack.all),
+                    last_frame=parentStack,
+                )
 
         def __init__(self):
-            self.richDefineds: list[
-                dict[
-                    str,
-                    DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined,
-                ]
-            ] = [dict()]
-            self.defineds: list[set[str]] = [
-                copy.copy(DistillLibraryFromDependency._builtins)
+            self.stack: list[
+                "DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame"
+            ] = [
+                DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame(
+                    cur_frame_newly_defined=Stream(
+                        DistillLibraryFromDependency._builtins
+                    ).to_dict(
+                        lambda x: x,
+                        lambda x: DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined(
+                            name=x, file="__builtin__"
+                        ),
+                    )
+                ).all_recalced()
             ]  # 使用栈来管理作用域
-            self.undeclUse: list[set[str]] = [set()]  # 存储未定义的变量
-            self.definedInCurStackFrameFreshNow()  # buffer for definedInCurStackFrame()
+            self.all_existed_defines: list[
+                DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined
+            ] = Stream(self.rootStackFrame().cur_frame_newly_defined.values()).to_list()
+
+        def lastStackFrame(
+            self,
+        ) -> "DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame":
+            return self.stack[-1]
+
+        def rootStackFrame(
+            self,
+        ) -> "DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame":
+            return self.stack[0]
 
         def definedInCurStackFrame(self) -> set[str]:
-            return self.dicsf
-
-        def definedInCurStackFrameFreshNow(self) -> None:
-            self.dicsf = set.union(*self.defineds)
+            return set(self.lastStackFrame().all.keys())
 
         def NewStackFrame(self) -> None:
-            self.richDefineds.append(dict())
-            self.defineds.append(set())
-            self.undeclUse.append(set())
-            self.definedInCurStackFrameFreshNow()
+            self.stack.append(
+                DistillLibraryFromDependency.DeclarationAndDependencyFinder._StackFrame.InitFromParentStack(
+                    self.lastStackFrame()
+                )
+            )
 
         def PopStackFrame(self) -> None:
             # 弹出当前作用域，并添加内层被使用但仍未定义的变量，遗留到外层0作用域，留待后置定义
-            childUndefined: set[str] = self.undeclUse.pop()
-            self.undeclUse[-1].update(childUndefined)
-            self.defineds.pop()
-            self.richDefineds.pop()
-            self.definedInCurStackFrameFreshNow()
+            childUndefined: set[str] = self.lastStackFrame().undefined_usage
+            self.stack.pop()
+            self.lastStackFrame().undefined_usage.update(childUndefined)
 
         def addDef(
             self,
@@ -336,20 +394,18 @@ class DistillLibraryFromDependency:
         ) -> None:
             type = type or DistillLibraryFromDependency.DefinitionType.default
             if s not in self.definedInCurStackFrame():
-                self.richDefineds[-1][s] = (
+                self.lastStackFrame().define(
                     DistillLibraryFromDependency.DeclarationAndDependencyFinder.RichDefined(
-                        s,
-                        type,
-                        sec,
+                        name=s,
+                        type=type,
+                        sec=sec,
                     )
                 )
-            self.defineds[-1].add(s)
-            self.dicsf.add(s)  # maintain buffer
-            # 后置定义
-            # 已禁用
-            # 因为后定义的正确性需要考虑代码的执行时机，但源码分析没法做到。
-            # 这样禁用可能把有定义的东西当做没定义，但严格些也比报错好
-            # self.undeclUse[-1].discard(s)
+                # 后置定义
+                # 已禁用
+                # 因为后定义的正确性需要考虑代码的执行时机，但源码分析没法做到。
+                # 这样禁用可能把有定义的东西当做没定义，但严格些也比报错好
+                self.lastStackFrame().undefined_usage.discard(s)
 
         def addUse(self, s: str) -> None:
             # 如果变量被使用且不在任何作用域中定义，则记录为 used
@@ -357,7 +413,7 @@ class DistillLibraryFromDependency:
                 self.addUndeclUse(s)
 
         def addUndeclUse(self, s: str) -> None:
-            self.undeclUse[-1].add(s)
+            self.lastStackFrame().undefined_usage.add(s)
 
         def getFunctionOrClassRealBeginLineNoIncludingDecorator(
             self, node: ast.FunctionDef | ast.ClassDef
@@ -492,23 +548,29 @@ class DistillLibraryFromDependency:
                     self.addDef(
                         alias.asname or alias.name,
                         Section(node.lineno, node.end_lineno),
+                        DistillLibraryFromDependency.DefinitionType.import_,
                     )
             self.generic_visit(node)
 
         def find_undefined(self) -> set[str]:
-            return self.undeclUse[-1]
+            return self.lastStackFrame().undefined_usage
 
         def find_global_defined(self) -> set[str]:
             # 检查代码中定义的全局对象
-            return self.defineds[0] - DistillLibraryFromDependency._builtins
+            return (
+                set(self.rootStackFrame().cur_frame_newly_defined.keys())
+                - DistillLibraryFromDependency._builtins
+            )
 
         def find_rich_global_defined(self) -> dict[str, RichDefined]:
-            gdefined = self.find_global_defined()
-            return {
-                k: self.richDefineds[0][k]
-                for k in gdefined
-                if k in self.richDefineds[0]
-            }
+            return (
+                Stream(self.find_global_defined())
+                .map(
+                    lambda k: self.rootStackFrame().cur_frame_newly_defined.get(k, None)
+                )
+                .filter(lambda x: x is not None)
+                .to_map(lambda x: x.name, lambda x: x)
+            )
 
         def proc_text(self, text: str):
             tree = ast.parse(text)
