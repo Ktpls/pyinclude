@@ -1,10 +1,10 @@
 import pydantic
 import typing
-from utilitypack.util_solid import Stream
+from ...util_solid import Stream
 import json
 
 try:
-    from utilitypack.modules.web.sqlalchemy_required import DbEntityBaseMixin
+    from .sqlalchemy_required import DbEntityBaseMixin
 
     _UsingSqlAlchemy = True
 except ImportError:
