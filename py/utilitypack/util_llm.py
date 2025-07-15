@@ -4,6 +4,7 @@ import torch
 import time
 import typing
 import os
+import re
 from transformers import (
     AutoTokenizer,
     AutoModel,
@@ -145,3 +146,13 @@ LLMApiUsing = LlmApiOllama
 
 @Singleton
 class Llm(LLMApiUsing): ...
+
+
+def remove_thinking(s):
+    return re.sub(r"\s*<think>.*</think>\s*", "", s, flags=re.DOTALL).strip()
+
+
+def extract_codeblock(s, lang):
+    return re.sub(
+        rf"^.*?```{lang}(?P<c>.*)```.*$", lambda m: m.group("c"), s, flags=re.DOTALL
+    ).strip()

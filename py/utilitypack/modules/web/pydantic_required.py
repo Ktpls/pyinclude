@@ -9,12 +9,11 @@ try:
     _UsingSqlAlchemy = True
 except ImportError:
     _UsingSqlAlchemy = False
-
-    class DbEntityBaseMixin: ...
+    # DbEntityBaseMixin = None
 
 
 class BaseModelExt(pydantic.BaseModel):
-    __sa_db_bind__: typing.ClassVar[typing.Optional[DbEntityBaseMixin]] = None
+    __sa_db_bind__: typing.ClassVar[typing.Optional["DbEntityBaseMixin"]] = None
     model_config = pydantic.ConfigDict(
         arbitrary_types_allowed=True, from_attributes=True
     )
@@ -36,14 +35,12 @@ class BaseModelExt(pydantic.BaseModel):
         return cls.lvalidate(json.loads(j))
 
     @classmethod
-    def FromDbEntity(cls, obj: DbEntityBaseMixin) -> typing.Self:
-        assert _UsingSqlAlchemy
+    def FromDbEntity(cls, obj: "DbEntityBaseMixin") -> typing.Self:
         assert cls.__sa_db_bind__
         assert isinstance(obj, cls.__sa_db_bind__)
         return cls.model_validate(obj.to_dict())
 
-    def ToDbEntity(self, move_from=None) -> DbEntityBaseMixin:
-        assert _UsingSqlAlchemy
+    def ToDbEntity(self, move_from=None) -> "DbEntityBaseMixin":
         assert self.__sa_db_bind__
-        bind: DbEntityBaseMixin = self.__sa_db_bind__
+        bind: "DbEntityBaseMixin" = self.__sa_db_bind__
         return bind.from_dict(self.model_dump(), move_from)

@@ -21,7 +21,7 @@ class DockerBuilder:
     runArg: list[str] = None
     dockerfile_dir: str = None
     dockerfile_path: str = None
-    dockercompose_dir: str = "."
+    dockercompose_dir: str = None
     img_file_name: str = "image.tar"
 
     def __init__(self):
@@ -43,8 +43,9 @@ class DockerBuilder:
         else:
             return toGetF(f)
 
-    def _toDir(self, path):
+    def to_dir(self, path):
         os.chdir(self.cwd), os.chdir(path)
+        return self
 
     def build(self, imgName=None, target=None):
         cmd = ["docker", "build"]
@@ -61,7 +62,7 @@ class DockerBuilder:
     @CwdProtected
     def docker_compose_build(self):
         if self.dockercompose_dir:
-            self._toDir(self.dockercompose_dir)
+            self.to_dir(self.dockercompose_dir)
         subprocess.run(["docker", "compose", "build"], check=True)
         return self
 
@@ -72,14 +73,14 @@ class DockerBuilder:
     @CwdProtected
     def compose_down(self):
         if self.dockercompose_dir:
-            self._toDir(self.dockercompose_dir)
+            self.to_dir(self.dockercompose_dir)
         subprocess.run(["docker", "compose", "down"], check=True)
         return self
 
     @CwdProtected
     def compose_up(self):
         if self.dockercompose_dir:
-            self._toDir(self.dockercompose_dir)
+            self.to_dir(self.dockercompose_dir)
         subprocess.run(["docker", "compose", "up", "-d"], check=True)
         return self
 
@@ -133,6 +134,8 @@ class DockerBuilder:
         subprocess.run(["docker", "restart", self.containerName], check=True)
         return self
 
+    NORMAL_HASH_COMMENTED_FILE = "normal_hash_commented_file"
+
     def preproc_pd(self, files: list[str | tuple[str, str]], pdenv: dict = None):
         """
         预处理PowerDefine模板文件
@@ -157,6 +160,7 @@ class DockerBuilder:
         """
         from powerDefine import (
             YamlFrontEnd,
+            NormalHashCommentFrontEnd,
             PythonFrontEnd,
             CLikeFrontEnd,
             AsmFrontEnd,
@@ -167,6 +171,7 @@ class DockerBuilder:
         front_end_mapping = {
             "yaml": YamlFrontEnd,
             "yml": YamlFrontEnd,
+            self.NORMAL_HASH_COMMENTED_FILE: NormalHashCommentFrontEnd,
             "py": PythonFrontEnd,
             "c": CLikeFrontEnd,
             "cpp": CLikeFrontEnd,
@@ -217,7 +222,7 @@ except:...
         return self
 
 
-def ExportDotEnvToDockerCompose(env_file: str, indent: str = "  ") -> str:
+def ExportDotEnvToDockerCompose(env_file: str, indent: str = "") -> str:
     import re
 
     r = (

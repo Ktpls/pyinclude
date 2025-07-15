@@ -889,7 +889,7 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
         def ndarray():
             import numpy as np
 
-            return lambda it: np.array(it)
+            return lambda it: np.array(list(it))
 
         list = list
         set = set
