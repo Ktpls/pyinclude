@@ -1,5 +1,4 @@
-import sqlalchemy
-import sqlalchemy.orm
+import sqlalchemy, sqlalchemy.orm
 import time
 import uuid
 

@@ -871,7 +871,6 @@ class BashProcess:
 
 
 T = typing.TypeVar("T")
-F = typing.TypeVar("F")
 R = typing.TypeVar("R")
 K = typing.TypeVar("K")
 V = typing.TypeVar("V")

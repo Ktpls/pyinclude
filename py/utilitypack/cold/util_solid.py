@@ -217,6 +217,19 @@ def printAndRet(val):
 class DistillLibraryFromDependency:
     """
     勉强能用
+    unables to recongize found so far
+        import_child_package
+            code
+                a=sqlalchemy.orm.Session
+            lib
+                import sqlalchemy
+                import sqlalchemy.orm
+            where orm is a package under sqlalchemy, but not a member of sqlalchemy
+            will only distill like
+                import sqlalchemy
+            making sqlalchemy.orm unreachable
+            try to do like this
+                import sqlalchemy, sqlalchemy.orm
     """
 
     _builtins = {
@@ -808,13 +821,9 @@ class DistillLibraryFromDependency:
         # 遍历sourceCode，提取其中未定义的对象名，保存到undef:list中
         undef = (
             Stream(sourceCode)
-            .map(
-                lambda file: DistillLibraryFromDependency.find_undefined_variables(
-                    file.content
-                )
-            )
+            .map(lambda file: file.content)
+            .map(DistillLibraryFromDependency.find_undefined_variables)
             .flat_map(lambda x: Stream(x))
-            .distinct()
             .collect(Stream.Collectors.list)
         )
         defsRequiringAdding = []
@@ -822,6 +831,7 @@ class DistillLibraryFromDependency:
         while True:
             addedDef = (
                 Stream(undef)
+                .sorted()  # 去除代码分析器内部使用set导致的结果顺序不稳定性
                 .filter(lambda x: x in libDefined)
                 .collect(Stream.Collectors.list)
             )
@@ -829,16 +839,14 @@ class DistillLibraryFromDependency:
             if len(addedDef) == 0:
                 break
 
-            defsRequiringAdding = addedDef + defsRequiringAdding
+            defsRequiringAdding = (
+                Stream(addedDef + defsRequiringAdding).distinct().collect(list)
+            )
             distilled_lib = DefinitionList2DistilledLibrary(
                 defsRequiringAdding, libDefined
             )
-            undef = (
-                Stream(
-                    DistillLibraryFromDependency.find_undefined_variables(distilled_lib)
-                )
-                .distinct()
-                .collect(Stream.Collectors.list)
+            undef = list(
+                DistillLibraryFromDependency.find_undefined_variables(distilled_lib)
             )
 
         return distilled_lib
