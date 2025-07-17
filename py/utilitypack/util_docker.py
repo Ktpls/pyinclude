@@ -44,7 +44,7 @@ class DockerBuilder:
             return toGetF(f)
 
     def to_dir(self, path):
-        os.chdir(self.cwd), os.chdir(path)
+        path and (os.chdir(self.cwd), os.chdir(path))
         return self
 
     def build(self, imgName=None, target=None):
@@ -67,28 +67,30 @@ class DockerBuilder:
         return self
 
     @CwdProtected
-    def recompose(self):
+    def recompose(self, remove_orphans: bool = None):
         return self.compose_down().compose_up()
 
     @CwdProtected
-    def compose_down(self):
-        if self.dockercompose_dir:
-            self.to_dir(self.dockercompose_dir)
-        subprocess.run(["docker", "compose", "down"], check=True)
+    def compose_down(self, remove_orphans: bool = None):
+        self.dockercompose_dir and self.to_dir(self.dockercompose_dir)
+        cmd = ["docker", "compose", "down"]
+        remove_orphans and cmd.append("--remove-orphans")
+        subprocess.run(cmd, check=True)
         return self
 
     @CwdProtected
-    def compose_up(self):
-        if self.dockercompose_dir:
-            self.to_dir(self.dockercompose_dir)
-        subprocess.run(["docker", "compose", "up", "-d"], check=True)
+    def compose_up(self, remove_orphans: bool = None):
+        self.dockercompose_dir and self.to_dir(self.dockercompose_dir)
+        cmd = ["docker", "compose", "up", "-d"]
+        remove_orphans and cmd.append("--remove-orphans")
+        subprocess.run(cmd, check=True)
         return self
 
     def export(self, imgName=None, img_file_name=None):
         img_file_name = img_file_name or self.img_file_name
-        subprocess.run(
-            ["docker", "save", "-o", img_file_name, imgName or self.imgName], check=True
-        )
+        imgName = imgName or self.imgName
+        cmd = ["docker", "save", "-o", img_file_name, imgName]
+        subprocess.run(cmd, check=True)
         return self
 
     def stopcontainer(self):
