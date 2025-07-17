@@ -856,7 +856,7 @@ class StreamTest(unittest.TestCase):
     def test_gather_async(self):
         import asyncio
 
-        async def async_task(x):
+        async def async_task(x: int):
             await asyncio.sleep(0)
             return x + 1
 
@@ -870,6 +870,7 @@ class StreamTest(unittest.TestCase):
             return x + 1
 
         pool = concurrent.futures.ThreadPoolExecutor()
+        # to set cuz wont keep in order
         result = (
             Stream([1, 2, 3])
             .map(lambda x: pool.submit(task, x=x))
@@ -882,9 +883,49 @@ class StreamTest(unittest.TestCase):
         result = Stream([1, 2, 3]).reversed().to_list()
         self.assertEqual(result, [3, 2, 1])
 
-    def test_unpacking(self):
+    def test_auto_unpacked(self):
         result = Stream(range(4)).wrap_iterator(enumerate).map(lambda a, b: b).sum()
         self.assertEqual(result, 6)
 
+    def test_auto_awaited(self):
+        async def add1(x: int):
+            return x + 1
 
+        result = Stream(range(3)).map(add1).map(add1).gather_async().sum()
+        self.assertEqual(result, 9)
+
+    def test_auto_unpacked_and_awaited(self):
+        async def add1(x: int, y: int):
+            return x + 1, y + 1
+
+        async def sum(x: int, y: int):
+            return x + y
+
+        result = (
+            Stream(range(3))
+            .wrap_iterator(enumerate)
+            .map(add1)
+            .map(sum)
+            .gather_async()
+            .sum()
+        )
+        self.assertEqual(result, 12)
+
+
+class UnionableClassTest(unittest.TestCase):
+    def test_basic_usage(self):
+        @dataclasses.dataclass
+        class Setting(UnionableClass):
+            v1: int = None
+            v2: int = None
+
+            def __all_field_names__(self):
+                return [k.name for k in dataclasses.fields(self)]
+
+        self.assertDictEqual(
+            dataclasses.asdict(Setting(v1=1) | Setting(v2=2)), {"v1": 1, "v2": 2}
+        )
+
+
+# StreamTest().test_auto_unpacked_awaited()
 unittest.main()
