@@ -596,13 +596,13 @@ class AnnotationUtil:
 
 
 class Cache:
-    class UpdateStrategey:
-        class UpdateStrategeyBase:
+    class UpdateStrategy:
+        class UpdateStrategyBase:
             def test(self, cache: "Cache") -> bool: ...
             def onUpdated(self, cache: "Cache") -> None: ...
 
         @dataclasses.dataclass
-        class Outdated(UpdateStrategeyBase):
+        class Outdated(UpdateStrategyBase):
             outdatedTime: float
             __lastUpdateTime: float = dataclasses.field(init=False, default=None)
 
@@ -615,7 +615,7 @@ class Cache:
                 self.__lastUpdateTime = time.perf_counter()
 
         @dataclasses.dataclass
-        class Invalid(UpdateStrategeyBase):
+        class Invalid(UpdateStrategyBase):
             isValid: typing.Callable[[typing.Any], bool]
 
             def test(self, cache: "Cache"):
@@ -624,21 +624,21 @@ class Cache:
     def __init__(
         self,
         toFetch,
-        updateStrategey: "Cache.UpdateStrategey.UpdateStrategeyBase | list[Cache.UpdateStrategey.UpdateStrategeyBase]",
+        updateStrategy: "Cache.UpdateStrategy.UpdateStrategyBase | list[Cache.UpdateStrategy.UpdateStrategyBase]",
     ):
         self.__toFetch = toFetch
-        self.updateStrategey = NormalizeIterableOrSingleArgToIterable(updateStrategey)
+        self.updateStrategy = NormalizeIterableOrSingleArgToIterable(updateStrategy)
         self.__val = None
 
     def update(self):
         self.__val = self.__toFetch()
-        for u in self.updateStrategey:
+        for u in self.updateStrategy:
             u.onUpdated(self)
 
     def get(self, newest=None):
         if newest is None:
             newest = False
-        if newest or any([u.test(self) for u in self.updateStrategey]):
+        if newest or any([u.test(self) for u in self.updateStrategy]):
             self.update()
         return self.__val
 
@@ -932,8 +932,9 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
     def _processed_pred(
         self,
         pred: typing.Callable[[T], R] | typing.Callable[[*Ts], R],
+        enable_unpacking: bool = True,
     ) -> typing.Callable[[T], R]:
-        if len(inspect.signature(pred).parameters) > 1:
+        if enable_unpacking and len(inspect.signature(pred).parameters) > 1:
             return self.UnpackedCalling(pred)
         else:
             return pred
@@ -1056,18 +1057,10 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
             groups.setdefault(func(i), []).append(i)
         return groups
 
-    @typing.overload
-    def reduce(
-        self: "Stream[tuple[*Ts]]", func: typing.Callable[[T, T], T], initial: T = None
-    ) -> typing.Optional[tuple[*Ts]]: ...
-    @typing.overload
-    def reduce(
-        self, func: typing.Callable[[T, T], T], initial: T = None
-    ) -> typing.Optional[T]: ...
     def reduce(
         self, func: typing.Callable[[T, T], T], initial: T = None
     ) -> typing.Optional[T]:
-        func = self._processed_pred(func)
+        func = self._processed_pred(func, enable_unpacking=False)
         if initial is not None:
             return functools.reduce(func, self._stream, initial)
         else:

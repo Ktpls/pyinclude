@@ -1,16 +1,11 @@
 import unittest
-from utilitypack.cold.util_solid import *
-from utilitypack.util_solid import *
-from utilitypack.util_cracked import *
-from utilitypack.util_windows import *
-from utilitypack.util_winkey import *
+import pprint
 
 """
 serves for a light enviroment for writing auto test
 """
 
 
-# copied from autotest.py
 class RedirectedPrint:
     def clearPrinted(self):
         self.msg = list()

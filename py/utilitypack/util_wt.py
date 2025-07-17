@@ -27,7 +27,7 @@ class WarthunderWindow(Cache):
 
         super().__init__(
             toFetch=toFetch,
-            updateStrategey=Cache.UpdateStrategey.Outdated(10),
+            updateStrategy=Cache.UpdateStrategy.Outdated(10),
         )
 
     def isValid(self):
@@ -461,7 +461,7 @@ class Port8111Cache:
         def __init__(self, queryType, fetch8111Interval) -> None:
             super().__init__(
                 toFetch=lambda: Port8111.get(queryType),
-                updateStrategey=Cache.UpdateStrategey.Outdated(fetch8111Interval),
+                updateStrategy=Cache.UpdateStrategy.Outdated(fetch8111Interval),
             )
             self.queryType = queryType
 
