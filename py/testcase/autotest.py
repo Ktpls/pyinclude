@@ -6,6 +6,21 @@ from utilitypack.util_windows import *
 from utilitypack.util_winkey import *
 
 
+class UnionableClassTest(unittest.TestCase):
+    def test_basic_usage(self):
+        @dataclasses.dataclass
+        class Setting(UnionableClass):
+            v1: int = None
+            v2: int = None
+
+            def __all_field_names__(self):
+                return [k.name for k in dataclasses.fields(self)]
+
+        self.assertDictEqual(
+            dataclasses.asdict(Setting(v1=1) | Setting(v2=2)), {"v1": 1, "v2": 2}
+        )
+
+
 class ExpparserTest(unittest.TestCase):
 
     @staticmethod
@@ -911,21 +926,21 @@ class StreamTest(unittest.TestCase):
         )
         self.assertEqual(result, 12)
 
+    def test_collect_to_string_io(self):
+        result = Stream(range(3)).map(str).collect(Stream.Collectors.stringIo())
+        result.seek(0)
+        result = result.read()
+        self.assertEqual(result, "012")
 
-class UnionableClassTest(unittest.TestCase):
-    def test_basic_usage(self):
-        @dataclasses.dataclass
-        class Setting(UnionableClass):
-            v1: int = None
-            v2: int = None
-
-            def __all_field_names__(self):
-                return [k.name for k in dataclasses.fields(self)]
-
-        self.assertDictEqual(
-            dataclasses.asdict(Setting(v1=1) | Setting(v2=2)), {"v1": 1, "v2": 2}
-        )
+    def test_collect_to_print(self):
+        old_stdout = sys.stdout
+        sys.stdout = buf = io.StringIO()
+        Stream(range(3)).collect(Stream.Collectors.print(end="", flush=True))
+        sys.stdout = old_stdout
+        buf.seek(0)
+        result = buf.read()
+        self.assertEqual(result, "012")
 
 
-# StreamTest().test_auto_unpacked_awaited()
+# StreamTest().test_collect_to_print()
 unittest.main()

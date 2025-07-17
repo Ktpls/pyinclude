@@ -18,6 +18,7 @@ import types
 import typing
 from .io import EnsureDirectoryExists
 from .time import SingleSectionedTimer
+import io
 
 EPS = 1e-10
 
@@ -29,7 +30,7 @@ class ParamValueUnset:
 
 
 class UnionableClass:
-    '''
+    """
     usage like
         setting1 | setting2 | ...
     meant to act like
@@ -38,7 +39,8 @@ class UnionableClass:
     but in member meaning
     alike dict's "|" operator but in reversed priority
     also supports update() method, which is in same behavior as dict's update() method
-    '''
+    """
+
     def __all_field_names__(self) -> list[str]: ...
 
     def _all_field_names_of_dataclass(self):
@@ -117,9 +119,10 @@ def EasyWrapper(wrapperLogic=None):
         @yourWrapper # if no arg for yourWrapper
         def foo(func_arg):
             ...
-    note that this is forbiden:
-        @someClassInstance.methodDecorator
-        def foo(...): ...
+    case doesnt work:
+        decorator defined as class member and called without parenthesis
+            @someClassInstance.methodDecorator
+            def foo(...): ...
             cuz wrapper will recieve the instance as the first arg, and the foo as the second
             making easywrapper confused with wrapping a class with a method as arg
             use this instead
@@ -920,6 +923,48 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
             return reducer_as_collector
 
         @staticmethod
+        @EasyWrapper
+        def _OneByOneCollector(
+            func: typing.Callable[[R, T], R],
+            initial: R = None,
+            initial_func: typing.Callable[[], R] = None,
+        ) -> typing.Callable[[typing.Iterable[T]], R]:
+            @functools.wraps(func)
+            def reducer_as_collector(iterable: typing.Iterable[T]):
+                val = initial or (initial_func and initial_func())
+                for i in iterable:
+                    val = func(val, i)
+                return val
+
+            return reducer_as_collector
+
+        @staticmethod
+        @EasyWrapper
+        def _OneByOneCollectorAsync(
+            func: typing.Callable[
+                [R, T], types.CoroutineType[typing.Any, typing.Any, R]
+            ],
+            initial: R = None,
+            initial_func: typing.Callable[[], R] = None,
+        ):
+            @functools.wraps(func)
+            async def reducer_as_collector(
+                iterable: typing.Iterable[
+                    types.CoroutineType[typing.Any, typing.Any, T]
+                ],
+            ):
+                val = initial or (initial_func and initial_func())
+                if isinstance(iterable, types.AsyncGeneratorType):
+                    async for i in iterable:
+                        val = await func(val, i)
+                else:
+                    for i in iterable:
+                        val = await func(val, i)
+                return val
+
+            return reducer_as_collector
+
+        @staticmethod
         def join(separator: str = ""):
             return lambda it: separator.join(it)
 
@@ -942,6 +987,23 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
                 return r
 
             return _
+
+        @staticmethod
+        def stringIo() -> typing.Callable[[typing.Iterable[str]], io.StringIO]:
+            @Stream.Collectors._OneByOneCollector(initial_func=io.StringIO)
+            def collector(buf: io.StringIO, x: str):
+                buf.write(x)
+                return buf
+
+            return collector
+
+        @staticmethod
+        def print(*a, **kw)-> typing.Callable[[typing.Iterable[str]], None]:
+            @Stream.Collectors._OneByOneCollector()
+            def collector(buf: None, x: str):
+                print(x, *a, **kw)
+
+            return collector
 
     @dataclasses.dataclass
     class PredProcessOption(UnionableClass):
@@ -1001,16 +1063,44 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
         pred,
         pred_option: typing.Optional["Stream.PredProcessOption"] = None,
     ) -> typing.Callable[[T], R]:
+        def _to_be_unpacked(pred, pred_option: Stream.PredProcessOption):
+            if pred_option.enable_unpacking:
+                if (
+                    inspect.isfunction(pred)
+                    and len(inspect.signature(pred).parameters) > 1
+                ):
+                    return True
+                if (
+                    inspect.isclass(pred)
+                    and len(
+                        [
+                            p
+                            for p in inspect.signature(
+                                pred.__init__
+                            ).parameters.values()
+                            if p.kind
+                            in [
+                                inspect.Parameter.POSITIONAL_ONLY,
+                                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            ]
+                            and p.default == inspect.Parameter.empty
+                        ]
+                    )
+                    > 2
+                ):
+                    return True
+            return False
+
+        def _to_be_awaited(pred, pred_option: Stream.PredProcessOption):
+            return pred_option.enable_awaiting and inspect.iscoroutinefunction(pred)
+
         pred_option = (
             (pred_option or Stream.PredProcessOption.unset())
             | self._pred_option
             | Stream.PredProcessOption.default()
         )
-        if pred_option.enable_awaiting and inspect.iscoroutinefunction(pred):
-            if (
-                pred_option.enable_unpacking
-                and len(inspect.signature(pred).parameters) > 1
-            ):
+        if _to_be_awaited(pred, pred_option):
+            if _to_be_unpacked(pred, pred_option):
                 pred_dealing_with_unpackeds = pred
 
                 @functools.wraps(pred)
@@ -1028,9 +1118,7 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
                 return await unawaited_pred(x)
 
             pred = pred_awaited
-        elif (
-            pred_option.enable_unpacking and len(inspect.signature(pred).parameters) > 1
-        ):
+        elif _to_be_unpacked(pred, pred_option):
             pred_dealing_with_unpackeds = pred
 
             @functools.wraps(pred)
