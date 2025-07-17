@@ -29,6 +29,16 @@ class ParamValueUnset:
 
 
 class UnionableClass:
+    '''
+    usage like
+        setting1 | setting2 | ...
+    meant to act like
+        def f(switch:bool = None):
+            switch = switch or value_from_some_config or value_from_another_config or ...
+    but in member meaning
+    alike dict's "|" operator but in reversed priority
+    also supports update() method, which is in same behavior as dict's update() method
+    '''
     def __all_field_names__(self) -> list[str]: ...
 
     def _all_field_names_of_dataclass(self):
