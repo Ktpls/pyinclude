@@ -716,7 +716,7 @@ class PositionalArgsResolvedAsNamedKwargsTest(unittest.TestCase):
         self.assertEqual(test(a=0, b=0, c=0, d=0), expected)
 
 
-class DeptDistillTest(unittest.TestCase):
+class DependencyDistillTest(unittest.TestCase):
     from utilitypack.cold.util_solid import DistillLibraryFromDependency
 
     def test_distill(self):
@@ -883,9 +883,8 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(result, [3, 2, 1])
 
     def test_unpacking(self):
-        Stream(range(5)).wrap_iterator(enumerate).map(lambda a, b: str(a + b)).map(
-            lambda x: len(x)
-        ).collect(list)
+        result = Stream(range(4)).wrap_iterator(enumerate).map(lambda a, b: b).sum()
+        self.assertEqual(result, 6)
 
 
 unittest.main()

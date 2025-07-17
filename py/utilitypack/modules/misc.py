@@ -905,19 +905,6 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
             return _
 
-    @staticmethod
-    def UnpackedCalling(
-        func: typing.Callable[[*Ts], R],
-    ) -> typing.Callable[[typing.Tuple[T]], R]:
-        @functools.wraps(func)
-        def unpacked_func(x: tuple[*Ts]):
-            assert isinstance(x, tuple)
-            return func(*x)
-
-        return unpacked_func
-
-    upcl = UnpackedCalling
-
     def __init__(self, stream: typing.Iterable[T], always_unpack: bool = False):
         self._stream = iter(stream)
         self._always_unpack = always_unpack
@@ -935,9 +922,15 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
         enable_unpacking: bool = True,
     ) -> typing.Callable[[T], R]:
         if enable_unpacking and len(inspect.signature(pred).parameters) > 1:
-            return self.UnpackedCalling(pred)
-        else:
-            return pred
+            pred_dealing_with_unpackeds = pred
+
+            @functools.wraps(pred)
+            def pred_dealing_with_tuple(x: tuple[*Ts]):
+                assert isinstance(x, tuple)
+                return pred_dealing_with_unpackeds(*x)
+
+            pred = pred_dealing_with_tuple
+        return pred
 
     def __iter__(self):
         return self._stream
