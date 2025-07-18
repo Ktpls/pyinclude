@@ -904,11 +904,6 @@ class BashProcess:
         return output
 
 
-# T = typing.TypeVar("T")
-# Ts = typing.TypeVarTuple("Ts")
-# R = typing.TypeVar("R")
-# K = typing.TypeVar("K")
-# V = typing.TypeVar("V")
 
 
 class Stream[T](typing.Generic[T], typing.Iterable[T]):
@@ -1557,10 +1552,10 @@ class Stream[T](typing.Generic[T], typing.Iterable[T]):
         """
         return func(self._stream)
 
-    def gather_async[R_FutureResult](
-        self: Stream[types.CoroutineType[typing.Any, typing.Any, R_FutureResult]],
+    def gather_async[R_Futr](
+        self: Stream[types.CoroutineType[typing.Any, typing.Any, R_Futr]],
         concurrent_limit: int = None,
-    ) -> Stream[R_FutureResult]:
+    ) -> Stream[R_Futr]:
         """
         use like:
             async def task(x):
@@ -1580,25 +1575,25 @@ class Stream[T](typing.Generic[T], typing.Iterable[T]):
             semaphore = asyncio.Semaphore(concurrent_limit)
 
             async def semaphored_task(
-                task: types.CoroutineType[typing.Any, typing.Any, R_FutureResult],
-            ) -> R_FutureResult:
+                task: types.CoroutineType[typing.Any, typing.Any, R_Futr],
+            ) -> R_Futr:
                 async with semaphore:
                     return await task
 
         else:
 
             async def semaphored_task(
-                task: types.CoroutineType[typing.Any, typing.Any, R_FutureResult],
-            ) -> R_FutureResult:
+                task: types.CoroutineType[typing.Any, typing.Any, R_Futr],
+            ) -> R_Futr:
                 return await task
 
         return self.map(
             semaphored_task, pred_option=Stream.PredProcessOption(enable_awaiting=False)
         ).wrap_iterator(run)
 
-    def gather_thread_future[R_FutureResult](
-        self: Stream[concurrent.futures.Future[R_FutureResult]],
-    ) -> Stream[R_FutureResult]:
+    def gather_thread_future[R_Futr](
+        self: Stream[concurrent.futures.Future[R_Futr]],
+    ) -> Stream[R_Futr]:
         """
         use like:
             def costly_function():
