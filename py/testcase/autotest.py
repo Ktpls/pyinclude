@@ -933,10 +933,8 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(result, "012")
 
     def test_collect_to_print(self):
-        old_stdout = sys.stdout
-        sys.stdout = buf = io.StringIO()
-        Stream(range(3)).collect(Stream.Collectors.print(end="", flush=True))
-        sys.stdout = old_stdout
+        buf = io.StringIO()
+        Stream(range(3)).collect(Stream.Collectors.print(end="", flush=True, file=buf))
         buf.seek(0)
         result = buf.read()
         self.assertEqual(result, "012")

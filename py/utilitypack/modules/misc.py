@@ -998,7 +998,7 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
             return collector
 
         @staticmethod
-        def print(*a, **kw)-> typing.Callable[[typing.Iterable[str]], None]:
+        def print(*a, **kw) -> typing.Callable[[typing.Iterable[str]], None]:
             @Stream.Collectors._OneByOneCollector()
             def collector(buf: None, x: str):
                 print(x, *a, **kw)
