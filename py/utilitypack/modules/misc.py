@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import collections
 import concurrent.futures
@@ -1025,7 +1026,7 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
     def __init__(
         self,
         stream: typing.Iterable[T],
-        pred_option: typing.Optional["Stream.PredProcessOption"] = None,
+        pred_option: typing.Optional[Stream.PredProcessOption] = None,
     ):
         self._stream = iter(stream)
         self._pred_option = pred_option or self.PredProcessOption.unset()
@@ -1045,20 +1046,22 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def _processed_pred(
-        self: "Stream[T | types.CoroutineType[typing.Any, typing.Any, T]]",
+        self: Stream[T | types.CoroutineType[typing.Any, typing.Any, T]],
         pred: typing.Callable[[T], R],
-        pred_option: typing.Optional["Stream.PredProcessOption"] = None,
+        pred_option: typing.Optional[Stream.PredProcessOption] = None,
     ) -> typing.Callable[[T], R]: ...
     @typing.overload
     def _processed_pred(
-        self: "Stream[tuple[*Ts] | types.CoroutineType[typing.Any, typing.Any, tuple[*Ts]]]",
+        self: Stream[
+            tuple[*Ts] | types.CoroutineType[typing.Any, typing.Any, tuple[*Ts]]
+        ],
         pred: typing.Callable[[*Ts], R],
-        pred_option: typing.Optional["Stream.PredProcessOption"] = None,
+        pred_option: typing.Optional[Stream.PredProcessOption] = None,
     ) -> typing.Callable[[tuple[*Ts]], R]: ...
     def _processed_pred(
         self,
         pred,
-        pred_option: typing.Optional["Stream.PredProcessOption"] = None,
+        pred_option: typing.Optional[Stream.PredProcessOption] = None,
     ) -> typing.Callable[[T], R]:
         def _to_be_unpacked(pred, pred_option: Stream.PredProcessOption):
             if pred_option.enable_unpacking:
@@ -1130,85 +1133,85 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
         return self._stream
 
     @staticmethod
-    def of(*args: T) -> "Stream[T]":
+    def of(*args: T) -> Stream[T]:
         return Stream(args)
 
     @typing.overload
     def map(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], R],
-        pred_option: "Stream.PredProcessOption" = None,
-    ) -> "Stream[R]": ...
+        pred_option: Stream.PredProcessOption = None,
+    ) -> Stream[R]: ...
     @typing.overload
     def map(
         self,
         func: typing.Callable[[T], R],
-        pred_option: "Stream.PredProcessOption" = None,
-    ) -> "Stream[R]": ...
+        pred_option: Stream.PredProcessOption = None,
+    ) -> Stream[R]: ...
     def map(
         self,
         func: typing.Callable[[T], R],
-        pred_option: "Stream.PredProcessOption" = None,
-    ) -> "Stream[R]":
+        pred_option: Stream.PredProcessOption = None,
+    ) -> Stream[R]:
         func = self._processed_pred(func, pred_option=pred_option)
         return self.clone(map(func, self._stream))
 
     @typing.overload
     def flat_map(
-        self: "Stream[tuple[*Ts]]",
-        func: typing.Callable[[*Ts], "Stream[R]"],
-        pred_option: "Stream.PredProcessOption" = None,
-    ) -> "Stream[R]": ...
+        self: Stream[tuple[*Ts]],
+        func: typing.Callable[[*Ts], Stream[R]],
+        pred_option: Stream.PredProcessOption = None,
+    ) -> Stream[R]: ...
     @typing.overload
     def flat_map(
         self,
-        func: typing.Callable[[T], "Stream[R]"],
-        pred_option: "Stream.PredProcessOption" = None,
-    ) -> "Stream[R]": ...
+        func: typing.Callable[[T], Stream[R]],
+        pred_option: Stream.PredProcessOption = None,
+    ) -> Stream[R]: ...
     def flat_map(
         self,
-        func: typing.Callable[[T], "Stream[R]"],
-        pred_option: "Stream.PredProcessOption" = None,
-    ) -> "Stream[R]":
+        func: typing.Callable[[T], Stream[R]],
+        pred_option: Stream.PredProcessOption = None,
+    ) -> Stream[R]:
         func = self._processed_pred(func, pred_option=pred_option)
         return self.clone(itertools.chain.from_iterable(map(func, self._stream)))
 
     @typing.overload
     def filter(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     @typing.overload
     def filter(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     def filter(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self:
         func = self._processed_pred(func, pred_option=pred_option)
         return self.clone(filter(func, self._stream))
 
     @typing.overload
     def for_each(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], None],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> None: ...
     @typing.overload
     def for_each(
         self,
         func: typing.Callable[[T], None],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> None: ...
     def for_each(
         self,
         func: typing.Callable[[T], None],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> None:
         func = self._processed_pred(func, pred_option=pred_option)
         for i in self._stream:
@@ -1216,20 +1219,20 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def peek(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], None],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     @typing.overload
     def peek(
         self,
         func: typing.Callable[[T], None],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     def peek(
         self,
         func: typing.Callable[[T], None],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self:
         func = self._processed_pred(func, pred_option=pred_option)
 
@@ -1242,20 +1245,20 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def distinct(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         pred: typing.Callable[[*Ts], R] = lambda *x: x,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     @typing.overload
     def distinct(
         self,
         pred: typing.Callable[[T], R] = lambda x: x,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     def distinct(
         self,
         pred: typing.Callable[[T], R] = lambda x: x,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self:
         pred = self._processed_pred(pred, pred_option=pred_option)
 
@@ -1270,23 +1273,23 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def sorted(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], R] = lambda *x: x,
         reverse=False,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     @typing.overload
     def sorted(
         self,
         func: typing.Callable[[T], R] = lambda x: x,
         reverse=False,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     def sorted(
         self,
         func=None,
         reverse=False,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self:
         if func:
             func = self._processed_pred(func, pred_option=pred_option)
@@ -1302,20 +1305,20 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def group_by(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], K],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> dict[K, list[tuple[*Ts]]]: ...
     @typing.overload
     def group_by(
         self,
         func: typing.Callable[[T], K],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> dict[K, list[T]]: ...
     def group_by(
         self,
         func: typing.Callable[[T], K],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> dict[K, list[T]]:
         func = self._processed_pred(func, pred_option=pred_option)
         groups = {}
@@ -1327,7 +1330,7 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
         self,
         func: typing.Callable[[T, T], T],
         initial: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]:
         func = (
             self.clone()
@@ -1350,23 +1353,23 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def min(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], V] = lambda *x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[tuple[*Ts]]: ...
     @typing.overload
     def min(
         self,
         func: typing.Callable[[T], V] = lambda x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]: ...
     def min(
         self,
         func: typing.Callable[[T], V] = lambda x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]:
         """
         :param default: use default value when stream is empty
@@ -1377,23 +1380,23 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def max(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], typing.Any] = lambda *x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[tuple[*Ts]]: ...
     @typing.overload
     def max(
         self,
         func: typing.Callable[[T], typing.Any] = lambda x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]: ...
     def max(
         self,
         func: typing.Callable[[T], typing.Any] = lambda x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]:
         """
         :param default: use default value when stream is empty
@@ -1404,23 +1407,23 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def minmax(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], typing.Any] = lambda *x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[tuple[*Ts]]: ...
     @typing.overload
     def minmax(
         self,
         func: typing.Callable[[T], typing.Any] = lambda x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]: ...
     def minmax(
         self,
         func: typing.Callable[[T], typing.Any] = lambda x: x,
         default: T = None,
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> typing.Optional[T]:
         """
         :param default: use default value when stream is empty
@@ -1444,20 +1447,20 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def any_match(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool: ...
     @typing.overload
     def any_match(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool: ...
     def any_match(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool:
         """
         this is equivalent to
@@ -1473,40 +1476,40 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def all_match(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool: ...
     @typing.overload
     def all_match(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool: ...
     def all_match(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool:
         func = self._processed_pred(func, pred_option=pred_option)
         return all(map(func, self._stream))
 
     @typing.overload
     def none_match(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         func: typing.Callable[[*Ts], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool: ...
     @typing.overload
     def none_match(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool: ...
     def none_match(
         self,
         func: typing.Callable[[T], bool],
-        pred_option: "Stream.PredProcessOption" = None,
+        pred_option: Stream.PredProcessOption = None,
     ) -> bool:
         func = self._processed_pred(func, pred_option=pred_option)
         return not self.any_match(func)
@@ -1519,26 +1522,26 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def to_dict(
-        self: "Stream[tuple[*Ts]]",
+        self: Stream[tuple[*Ts]],
         k: typing.Callable[[*Ts], K],
         v: typing.Callable[[*Ts], V],
-        pred_option_k: "Stream.PredProcessOption" = None,
-        pred_option_v: "Stream.PredProcessOption" = None,
+        pred_option_k: Stream.PredProcessOption = None,
+        pred_option_v: Stream.PredProcessOption = None,
     ) -> dict[K, V]: ...
     @typing.overload
     def to_dict(
         self,
         k: typing.Callable[[T], K],
         v: typing.Callable[[T], V],
-        pred_option_k: "Stream.PredProcessOption" = None,
-        pred_option_v: "Stream.PredProcessOption" = None,
+        pred_option_k: Stream.PredProcessOption = None,
+        pred_option_v: Stream.PredProcessOption = None,
     ) -> dict[K, V]: ...
     def to_dict(
         self,
         k: typing.Callable[[T], K],
         v: typing.Callable[[T], V],
-        pred_option_k: "Stream.PredProcessOption" = None,
-        pred_option_v: "Stream.PredProcessOption" = None,
+        pred_option_k: Stream.PredProcessOption = None,
+        pred_option_v: Stream.PredProcessOption = None,
     ) -> dict[K, V]:
         k = self._processed_pred(k, pred_option=pred_option_k)
         v = self._processed_pred(v, pred_option=pred_option_v)
@@ -1555,9 +1558,9 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
         return func(self._stream)
 
     def gather_async(
-        self: "Stream[types.CoroutineType[typing.Any, typing.Any, R]]",
+        self: Stream[types.CoroutineType[typing.Any, typing.Any, R]],
         concurrent_limit: int = None,
-    ) -> "Stream[R]":
+    ) -> Stream[R]:
         """
         use like:
             async def task(x):
@@ -1593,9 +1596,9 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
             semaphored_task, pred_option=Stream.PredProcessOption(enable_awaiting=False)
         ).wrap_iterator(run)
 
-    def gather_thread_future(
-        self: "Stream[concurrent.futures.Future[T]]",
-    ) -> "Stream[T]":
+    def gather_thread_future[T_FutureResult](
+        self: Stream[concurrent.futures.Future[T_FutureResult]],
+    ) -> Stream[T_FutureResult]:
         """
         use like:
             def costly_function():
@@ -1618,7 +1621,7 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     def wrap_iterator(
         self, iterator: typing.Callable[[typing.Iterable[T]], typing.Iterable[R]]
-    ) -> "Stream[R]":
+    ) -> Stream[R]:
         return self.clone(iterator(self._stream))
 
     def reversed(self) -> typing.Self:

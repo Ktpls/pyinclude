@@ -778,7 +778,8 @@ import typing
 class StreamTest(unittest.TestCase):
 
     def test_basic_use(self):
-        self.assertEqual(Stream(range(10)).count(), 10)
+        result = Stream(range(10)).count()
+        self.assertEqual(result, 10)
 
     def test_map(self):
         result = Stream([1, 2, 3]).map(lambda x: x * 2).to_list()
@@ -817,10 +818,12 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(result, [1, 2, 3])
 
     def test_count(self):
-        self.assertEqual(Stream([1, 2, 3]).count(), 3)
+        result = Stream([1, 2, 3]).count()
+        self.assertEqual(result, 3)
 
     def test_sum(self):
-        self.assertEqual(Stream([1, 2, 3]).sum(), 6)
+        result = Stream([1, 2, 3]).sum()
+        self.assertEqual(result, 6)
 
     def test_group_by(self):
         result = Stream([1, 2, 3, 4]).group_by(lambda x: x % 2)
