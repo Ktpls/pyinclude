@@ -884,7 +884,7 @@ class StreamTest(unittest.TestCase):
     def test_gather_thread(self):
         import concurrent.futures
 
-        def task(x):
+        def task(x: int):
             return x + 1
 
         pool = concurrent.futures.ThreadPoolExecutor()
