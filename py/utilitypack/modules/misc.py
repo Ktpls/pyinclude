@@ -1101,11 +1101,11 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
                 pred_dealing_with_unpackeds = pred
 
                 @functools.wraps(pred)
-                async def pred_dealing_with_tuple(x: tuple[*Ts]):
+                async def pred_dealing_with_tuple_async_form(x: tuple[*Ts]):
                     assert isinstance(x, tuple)
                     return await pred_dealing_with_unpackeds(*x)
 
-                pred = pred_dealing_with_tuple
+                pred = pred_dealing_with_tuple_async_form
             unawaited_pred = pred
 
             @functools.wraps(pred)
