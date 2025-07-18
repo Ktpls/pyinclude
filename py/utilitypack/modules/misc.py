@@ -1045,19 +1045,16 @@ class Stream(typing.Generic[T], typing.Iterable[T]):
 
     @typing.overload
     def _processed_pred(
-        self,
-        pred: typing.Callable[[T], R] | typing.Callable[[*Ts], R],
+        self: "Stream[T | types.CoroutineType[typing.Any, typing.Any, T]]",
+        pred: typing.Callable[[T], R],
         pred_option: typing.Optional["Stream.PredProcessOption"] = None,
     ) -> typing.Callable[[T], R]: ...
     @typing.overload
     def _processed_pred(
-        self,
-        pred: (
-            typing.Callable[[T], types.CoroutineType[typing.Any, typing.Any, R]]
-            | typing.Callable[[*Ts], types.CoroutineType[typing.Any, typing.Any, R]]
-        ),
+        self: "Stream[tuple[*Ts] | types.CoroutineType[typing.Any, typing.Any, tuple[*Ts]]]",
+        pred: typing.Callable[[*Ts], R],
         pred_option: typing.Optional["Stream.PredProcessOption"] = None,
-    ) -> typing.Callable[[T], types.CoroutineType[typing.Any, typing.Any, R]]: ...
+    ) -> typing.Callable[[tuple[*Ts]], R]: ...
     def _processed_pred(
         self,
         pred,
