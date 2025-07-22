@@ -20,6 +20,8 @@ import typing
 from .io import EnsureDirectoryExists
 from .time import SingleSectionedTimer
 import io
+import sys
+import threading
 
 EPS = 1e-10
 
@@ -862,18 +864,23 @@ class PositionalArgsResolvedAsNamedKwargs:
 class BashProcess:
     # interactive!
     proc: subprocess.Popen = None
-    END_OF_COMMAND = "@@@@END_OF_COMMAND@@@@"
+    END_OF_COMMAND = "@@@@END_OF_BASH_PROCESS_COMMAND_ROUND@@@@"
 
     def __init__(self): ...
 
     def enter(self):
+        if sys.platform == "win32":
+            shell = "cmd"
+        else:
+            shell = "bash"
         self.proc = subprocess.Popen(
-            ["bash"],
+            shell,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        os.set_blocking(self.proc.stdout.fileno(), False)
 
     def exit(self):
         self.proc.stdin.close()
@@ -884,7 +891,7 @@ class BashProcess:
         self.enter()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *a, **kw):
         self.exit()
         return False
 
@@ -909,6 +916,10 @@ class BashProcess:
 class Stream[T](typing.Generic[T], typing.Iterable[T]):
     # copied from superstream 0.2.6 !
     # but with some improvements
+
+    # to notify that this class is supported under annotations
+    annotations.__init__
+
     class Collectors:
         @staticmethod
         def _Reducer(func: typing.Callable[[T, T], T]):

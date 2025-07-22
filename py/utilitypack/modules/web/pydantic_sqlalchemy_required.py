@@ -4,7 +4,7 @@ from .pydantic_required import BaseModelExt
 
 
 class BaseModelExtDbLinked(BaseModelExt):
-    __sa_db_bind__: typing.ClassVar[typing.Optional[DbEntityBaseMixin]] = None
+    __sa_db_bind__: typing.ClassVar[typing.Optional[type[DbEntityBaseMixin]]] = None
 
     @classmethod
     def FromDbEntity(cls, obj: DbEntityBaseMixin) -> typing.Self:
@@ -14,5 +14,5 @@ class BaseModelExtDbLinked(BaseModelExt):
 
     def ToDbEntity(self, move_from=None) -> DbEntityBaseMixin:
         assert self.__sa_db_bind__
-        bind: DbEntityBaseMixin = self.__sa_db_bind__
+        bind: type[DbEntityBaseMixin] = self.__sa_db_bind__
         return bind.from_dict(self.model_dump(), move_from)

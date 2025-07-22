@@ -6,9 +6,11 @@ from utilitypack.util_solid import (
     UrlFullResolution,
     Stream,
     AllFileIn,
+    IdentityMapping,
 )
 import types
 from utilitypack.cold.util_solid import DistillLibraryFromDependency
+import typing
 
 
 class DockerBuilder:
@@ -196,7 +198,11 @@ class DockerBuilder:
         return self
 
     def DistillUtils(
-        self, your_project: str, util_module: types.ModuleType, target_file: str
+        self,
+        your_project: str,
+        util_module: types.ModuleType,
+        target_file: str,
+        manual_modifier: typing.Callable[[str], str] = IdentityMapping,
     ):
         target_file_not_exists = not os.path.exists(target_file)
         uts_copy = DistillLibraryFromDependency.DistillLibrary(
@@ -207,18 +213,14 @@ class DockerBuilder:
                 lambda x: target_file_not_exists or not os.path.samefile(x, target_file)
             )
             .sorted()
-            .map(lambda x: ReadTextFile(x)),
+            .map(lambda x: ReadTextFile(x))
+            .collect(list),
             Stream(AllFileIn(UrlFullResolution.of(util_module.__file__).folder))
             .filter(lambda x: not x.startswith("_") and x.endswith(".py"))
             .sorted()
-            .map(lambda x: ReadTextFile(x)),
-        )
-        uts_copy = (
-            """\
-try:from utilitypack.util_solid import *
-except:...
-"""
-            + uts_copy
+            .map(lambda x: ReadTextFile(x))
+            .collect(list),
+            manual_modifier,
         )
         WriteTextFile(target_file, uts_copy)
         return self

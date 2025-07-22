@@ -7,6 +7,7 @@ from ..util_solid import (
     StoppableThread,
     FunctionalWrapper,
     Stream,
+    IdentityMapping,
 )
 import io
 import ast
@@ -714,7 +715,11 @@ class DistillLibraryFromDependency:
         return finder.find_rich_global_defined()
 
     @staticmethod
-    def DistillLibrary(sourceCode: list[str], library: list[str]):
+    def DistillLibrary(
+        sourceCode: list[str],
+        library: list[str],
+        manual_modifier: typing.Callable[[str], str] = IdentityMapping,
+    ):
         """
         TODO
             from utilitypack.util_xxx import *能够正常工作
@@ -789,7 +794,9 @@ class DistillLibraryFromDependency:
                 )
                 # defObjSourceCode[0] = defObjSourceCode[0].strip()
                 defCodeList.append("\n".join(defObjSourceCode))
-            return "\n".join(defCodeList)
+            distilled_single_file = "\n".join(defCodeList)
+            distilled_single_file = manual_modifier(distilled_single_file)
+            return distilled_single_file
 
         # 可能找到多处定义
         libDefined: dict[str, Definition] = {}
