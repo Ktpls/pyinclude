@@ -1,3 +1,4 @@
+from __future__ import annotations
 from testcase.autotest_common import *
 from utilitypack.cold.util_solid import *
 from utilitypack.util_solid import *
@@ -415,17 +416,17 @@ class AutoFunctionalTest(unittest.TestCase, RedirectedPrint):
 
         @AutoFunctional
         class Clz:
-            def __init__(self2, val) -> None:
+            def __init__(self2, val):
                 self2.val = val
 
-            def inc(self2) -> None:
+            def inc(self2) -> typing.Self:
                 self2.val += 1
 
-            def assertVal(self2, val) -> None:
+            def assertVal(self2, val) -> typing.Self:
                 self.assertEqual(self2.val, val)
 
             @staticmethod
-            def staticMethod() -> None:
+            def staticMethod() -> typing.Self:
                 nonlocal varStatic
                 varStatic += 1
 
@@ -435,80 +436,80 @@ class AutoFunctionalTest(unittest.TestCase, RedirectedPrint):
         self.assertEqual(varStatic, 1)
 
 
-class BeanUtilTest(unittest.TestCase):
+# class BeanUtilTest(unittest.TestCase):
+# # no furthuer update plan
+#     def test_CopySimpleClass(self):
+#         @dataclasses.dataclass
+#         class A:
+#             i: int
+#             s: str
 
-    def test_CopySimpleClass(self):
-        @dataclasses.dataclass
-        class A:
-            i: int
-            s: str
+#         @dataclasses.dataclass
+#         class B:
+#             i: int
+#             s: str
 
-        @dataclasses.dataclass
-        class B:
-            i: int
-            s: str
+#         a = A(1, "s")
+#         b: B = BeanUtil.copyProperties(a, B)
+#         self.assertEqual(b.i, 1)
 
-        a = A(1, "s")
-        b: B = BeanUtil.copyProperties(a, B)
-        self.assertEqual(b.i, 1)
+#     def test_CopyNestedClass(self):
+#         @dataclasses.dataclass
+#         class A:
+#             i: int
+#             s: str
 
-    def test_CopyNestedClass(self):
-        @dataclasses.dataclass
-        class A:
-            i: int
-            s: str
+#         @dataclasses.dataclass
+#         class B:
+#             a: A
+#             b: str
 
-        @dataclasses.dataclass
-        class B:
-            a: A
-            b: str
+#         inst = B(
+#             A(1, "s"),
+#             "s",
+#         )
+#         m = BeanUtil.toJsonCompatible(inst)
+#         self.assertDictEqual(
+#             m,
+#             {
+#                 "a": {
+#                     "i": 1,
+#                     "s": "s",
+#                 },
+#                 "b": "s",
+#             },
+#         )
+#         inst: B = BeanUtil.copyProperties(m, B)
+#         self.assertEqual(inst.a.i, 1)
 
-        inst = B(
-            A(1, "s"),
-            "s",
-        )
-        m = BeanUtil.toJsonCompatible(inst)
-        self.assertDictEqual(
-            m,
-            {
-                "a": {
-                    "i": 1,
-                    "s": "s",
-                },
-                "b": "s",
-            },
-        )
-        inst: B = BeanUtil.copyProperties(m, B)
-        self.assertEqual(inst.a.i, 1)
+#     def test_CopyList(self):
+#         @dataclasses.dataclass
+#         class A:
+#             i: int
+#             s: str
 
-    def test_CopyList(self):
-        @dataclasses.dataclass
-        class A:
-            i: int
-            s: str
+#         @dataclasses.dataclass
+#         class B:
+#             la: list[A]
+#             b: str
 
-        @dataclasses.dataclass
-        class B:
-            la: list[A]
-            b: str
-
-        b = B(
-            [A(0, "s"), A(1, "s")],
-            "s",
-        )
-        m = BeanUtil.toJsonCompatible(b)
-        self.assertDictEqual(
-            m,
-            {
-                "la": [
-                    {"i": 0, "s": "s"},
-                    {"i": 1, "s": "s"},
-                ],
-                "b": "s",
-            },
-        )
-        b2: B = BeanUtil.copyProperties(m, B)
-        self.assertEqual(b2.la[1].i, 1)
+#         b = B(
+#             [A(0, "s"), A(1, "s")],
+#             "s",
+#         )
+#         m = BeanUtil.toJsonCompatible(b)
+#         self.assertDictEqual(
+#             m,
+#             {
+#                 "la": [
+#                     {"i": 0, "s": "s"},
+#                     {"i": 1, "s": "s"},
+#                 ],
+#                 "b": "s",
+#             },
+#         )
+#         b2: B = BeanUtil.copyProperties(m, B)
+#         self.assertEqual(b2.la[1].i, 1)
 
 
 class DataclassInitReorderTest(unittest.TestCase):
@@ -943,5 +944,32 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(result, "012")
 
 
-# StreamTest().test_collect_to_print()
+class ThreadContextTest(unittest.TestCase):
+    class DictHolder(dict, ThreadContext[dict]): ...
+
+    def test_accessable_in_thread(self: ThreadContextTest):
+        def if_existance(self: ThreadContextTest, expected_existance: bool):
+            existance = len(ThreadContextTest.DictHolder.summon().keys())
+            self.assertEqual(existance, expected_existance)
+
+            if existance:
+                ThreadContextTest.DictHolder.summon()["v"] += 1
+
+        dh = ThreadContextTest.DictHolder.summon()
+        dh["v"] = 1
+        th = threading.Thread(
+            target=if_existance,
+            args=(
+                self,
+                False,
+            ),
+        )
+        th.start()
+        th.join()
+
+        if_existance(self, True)
+        self.assertEqual(dh["v"], 2)
+
+
+# ThreadContextTest().test_accessable_in_thread()
 unittest.main()

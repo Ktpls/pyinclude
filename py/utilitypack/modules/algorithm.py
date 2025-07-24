@@ -20,12 +20,12 @@ class PIDController:
     kp: float = 0
     ki: float = 0
     kd: float = 0
-    integralLimitMin: float = None
-    integralLimitMax: float = None
+    integralLimitMin: typing.Optional[float] = None
+    integralLimitMax: typing.Optional[float] = None
     analizerMode: bool = False
     last_error: float = dataclasses.field(default=0, init=False)
     integral: float = dataclasses.field(default=0, init=False)
-    frameData: AnalizerFrameData = dataclasses.field(default=None, init=False)
+    frameData: typing.Optional[AnalizerFrameData] = dataclasses.field(default=None, init=False)
 
     def update(self, error, dt=1):
         self.integral += error * dt

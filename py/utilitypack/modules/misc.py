@@ -90,7 +90,7 @@ def IdentityMapping(x):
     return x
 
 
-def ArrayFlatten(iterable, iterableType: tuple[type] = (list, tuple)):
+def ArrayFlatten(iterable, iterableType: tuple[type, ...] = (list, tuple)):
     result = list()
     for item in iterable:
         if isinstance(item, iterableType):
@@ -489,8 +489,8 @@ class Container:
 @dataclasses.dataclass
 class Switch:
 
-    onSetOn: typing.Callable[[], None] = None
-    onSetOff: typing.Callable[[], None] = None
+    onSetOn: typing.Optional[typing.Callable[[], None]] = None
+    onSetOff: typing.Optional[typing.Callable[[], None]] = None
     initial: bool = False
     skipRespondingOnStateUnchanged: bool = True
     """
@@ -568,7 +568,7 @@ def Singleton(cls):
     return cls
 
 
-def NormalizeIterableOrSingleArgToIterable(arg) -> list:
+def NormalizeIterableOrSingleArgToIterable(arg) -> list | tuple:
     if not isinstance(arg, (list, tuple)):
         return [arg]
     return arg
@@ -645,7 +645,9 @@ class Cache:
         @dataclasses.dataclass
         class Outdated(UpdateStrategyBase):
             outdatedTime: float
-            __lastUpdateTime: float = dataclasses.field(init=False, default=None)
+            __lastUpdateTime: typing.Optional[float] = dataclasses.field(
+                init=False, default=None
+            )
 
             def test(self, cache: "Cache"):
                 if self.__lastUpdateTime is None:
@@ -701,7 +703,7 @@ def Decode(*args):
         if isinstance(cond, bool):
             if cond:
                 return val
-        elif isinstance(cond, callable):
+        elif isinstance(cond, typing.Callable):
             if len(inspect.signature(cond).parameters) == 0:
                 if cond():
                     return val
@@ -715,7 +717,7 @@ class MaxRetry:
     def __init__(
         self,
         maxRetry: int = 3,
-        succCond: typing.Callable[[], bool] = None,
+        succCond: typing.Optional[typing.Callable[[], bool]] = None,
         errOnMaxRetry=True,
     ):
         self.succCond = succCond
@@ -759,10 +761,11 @@ def ComparatorOverloadedByPred(cls, Pred):
 
 @dataclasses.dataclass
 class Section:
-    start: int = None
-    end: int = None
+    start: typing.Optional[int] = None
+    end: typing.Optional[int] = None
 
     def __len__(self):
+        assert self.start is not None and self.end is not None
         return self.end - self.start
 
     def cut(self, container):
@@ -775,8 +778,13 @@ def AutoFunctional(clz):
             continue
         if inspect.isclass(func):
             continue
-        # only specified to be none
-        if inspect.signature(func).return_annotation is not None:
+        # only specified to be Self
+        retanno = inspect.signature(func).return_annotation
+        if retanno is None or (
+            retanno is not typing.Self
+            and retanno != "typing.Self"
+            and retanno != "Self"
+        ):
             continue
         if isinstance(func, staticmethod):
             continue
@@ -863,7 +871,7 @@ class PositionalArgsResolvedAsNamedKwargs:
 
 class BashProcess:
     # interactive!
-    proc: subprocess.Popen = None
+    proc: typing.Optional[subprocess.Popen] = None
     END_OF_COMMAND = "@@@@END_OF_BASH_PROCESS_COMMAND_ROUND@@@@"
 
     def __init__(self): ...
@@ -896,6 +904,9 @@ class BashProcess:
         return False
 
     def send_command(self, command):
+        """
+        returns until process finished!
+        """
         command = f"{command}\necho '{self.END_OF_COMMAND}'\n"
         self.proc.stdin.write(command)
         self.proc.stdin.flush()
@@ -911,9 +922,7 @@ class BashProcess:
         return output
 
 
-
-
-class Stream[T](typing.Generic[T], typing.Iterable[T]):
+class Stream[T](typing.Iterable[T]):
     # copied from superstream 0.2.6 !
     # but with some improvements
 
@@ -934,7 +943,7 @@ class Stream[T](typing.Generic[T], typing.Iterable[T]):
         def _OneByOneCollector[R](
             func: typing.Callable[[R, T], R],
             initial: R = None,
-            initial_func: typing.Callable[[], R] = None,
+            initial_func: typing.Optional[typing.Callable[[], R]] = None,
         ) -> typing.Callable[[typing.Iterable[T]], R]:
             @functools.wraps(func)
             def reducer_as_collector(iterable: typing.Iterable[T]):
@@ -952,7 +961,7 @@ class Stream[T](typing.Generic[T], typing.Iterable[T]):
                 [R, T], types.CoroutineType[typing.Any, typing.Any, R]
             ],
             initial: R = None,
-            initial_func: typing.Callable[[], R] = None,
+            initial_func: typing.Optional[typing.Callable[[], R]] = None,
         ):
             @functools.wraps(func)
             async def reducer_as_collector(
@@ -1717,3 +1726,26 @@ def SuccessOrNone[R](f: typing.Callable[[], R]) -> typing.Optional[R]:
         return f()
     except:
         return None
+
+
+class CommitUnpressureizer:
+    def __init__(self, func: typing.Callable, interval=None):
+        self.func = func
+        self.interval = interval or 100
+        self.count = 0
+        self.lock = threading.Lock()
+
+    def commit(self):
+        commit = None
+        with self.lock:
+            if self.count >= self.interval:
+                self.count = 0
+                commit = True
+            else:
+                commit = False
+            self.count += 1
+        if commit:
+            self.func()
+
+    def force_commit(self):
+        self.func()

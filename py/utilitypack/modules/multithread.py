@@ -1,3 +1,4 @@
+from __future__ import annotations
 import concurrent.futures
 import enum
 import threading
@@ -363,3 +364,24 @@ class Pwm(StoppableThread):
                 switch.setTo(False)
                 PreciseSleep(self.period - gamma)
         switch.setTo(False)
+
+
+class ThreadContext[T]:
+    __pool__ = threading.local()
+
+    @classmethod
+    def __pool_key__(cls):
+        return cls.__qualname__
+
+    @classmethod
+    def clear(cls):
+        cls.__pool__.__setattr__(cls.__pool_key__(), None)
+
+    @classmethod
+    def summon(cls) -> T:
+        try:
+            r = cls.__pool__.__getattribute__(cls.__pool_key__())
+        except AttributeError:
+            r = cls()
+            cls.__pool__.__setattr__(cls.__pool_key__(), r)
+        return r

@@ -4,7 +4,9 @@ import zipfile
 
 
 def AllFileIn(
-    path, includeFileInSubDir=True, path_filter: typing.Callable[[str], bool] = None
+    path,
+    includeFileInSubDir=True,
+    path_filter: typing.Optional[typing.Callable[[str], bool]] = None,
 ):
     ret = []
     for dirpath, dir, file in os.walk(path):
