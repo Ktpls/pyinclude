@@ -947,18 +947,26 @@ class StreamTest(unittest.TestCase):
 class ThreadContextTest(unittest.TestCase):
     class DictHolder(dict, ThreadContext[dict]): ...
 
-    def test_accessable_in_thread(self: ThreadContextTest):
-        def if_existance(self: ThreadContextTest, expected_existance: bool):
-            existance = len(ThreadContextTest.DictHolder.summon().keys())
-            self.assertEqual(existance, expected_existance)
+    KEY = "v"
 
-            if existance:
-                ThreadContextTest.DictHolder.summon()["v"] += 1
+    def if_existance(self, expected_existance: bool):
+        existance = len(ThreadContextTest.DictHolder.summon().keys())
+        self.assertEqual(existance, expected_existance)
 
+        if existance:
+            ThreadContextTest.DictHolder.summon()["v"] += 1
+
+    def test_accessable_in_thread(self):
         dh = ThreadContextTest.DictHolder.summon()
-        dh["v"] = 1
+        dh[self.KEY] = 1
+        self.if_existance(True)
+        self.assertEqual(dh[self.KEY], 2)
+
+    def test_inaccessable_in_another_thread(self: ThreadContextTest):
+        dh = ThreadContextTest.DictHolder.summon()
+        dh[self.KEY] = 1
         th = threading.Thread(
-            target=if_existance,
+            target=ThreadContextTest.if_existance,
             args=(
                 self,
                 False,
@@ -966,9 +974,6 @@ class ThreadContextTest(unittest.TestCase):
         )
         th.start()
         th.join()
-
-        if_existance(self, True)
-        self.assertEqual(dh["v"], 2)
 
 
 # ThreadContextTest().test_accessable_in_thread()
