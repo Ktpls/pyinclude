@@ -945,30 +945,43 @@ class StreamTest(unittest.TestCase):
 
 
 class ThreadContextTest(unittest.TestCase):
-    class DictHolder(dict, ThreadContext[dict]): ...
 
-    KEY = "v"
+    class ChildClass(ThreadLocalSingleton):
+        def __init__(self):
+            super().__init__()
+            self.v = None
 
-    def if_existance(self, expected_existance: bool):
-        existance = len(ThreadContextTest.DictHolder.summon().keys())
+    class GrandsonClass(ChildClass): ...
+
+    def if_existance(self, cls: ChildClass, expected_existance: bool):
+        existance = cls.summon().v is not None
         self.assertEqual(existance, expected_existance)
 
-        if existance:
-            ThreadContextTest.DictHolder.summon()["v"] += 1
-
     def test_accessable_in_thread(self):
-        dh = ThreadContextTest.DictHolder.summon()
-        dh[self.KEY] = 1
-        self.if_existance(True)
-        self.assertEqual(dh[self.KEY], 2)
+        ThreadContextTest.ChildClass.summon().v = 1
+        self.if_existance(ThreadContextTest.ChildClass, True)
 
-    def test_inaccessable_in_another_thread(self: ThreadContextTest):
-        dh = ThreadContextTest.DictHolder.summon()
-        dh[self.KEY] = 1
+    def test_inaccessable_in_another_thread(self):
+        ThreadContextTest.ChildClass.summon().v = 1
         th = threading.Thread(
             target=ThreadContextTest.if_existance,
             args=(
                 self,
+                ThreadContextTest.ChildClass,
+                False,
+            ),
+        )
+        th.start()
+        th.join()
+
+    def test_inherited_again(self):
+        ThreadContextTest.GrandsonClass.summon().v = 1
+        self.if_existance(ThreadContextTest.GrandsonClass, True)
+        th = threading.Thread(
+            target=ThreadContextTest.if_existance,
+            args=(
+                self,
+                ThreadContextTest.GrandsonClass,
                 False,
             ),
         )

@@ -366,22 +366,16 @@ class Pwm(StoppableThread):
         switch.setTo(False)
 
 
-class ThreadContext[T]:
-    __pool__ = threading.local()
+class ThreadLocalSingleton:
+    def __init_subclass__(cls, **kwargs):
+        """为每个子类初始化独立的线程局部存储"""
+        super().__init_subclass__(**kwargs)
+        # 每个子类拥有独立的线程局部变量空间
+        cls._thread_local = threading.local()  # [[3]]
 
     @classmethod
-    def __pool_key__(cls):
-        return cls.__qualname__
-
-    @classmethod
-    def clear(cls):
-        cls.__pool__.__setattr__(cls.__pool_key__(), None)
-
-    @classmethod
-    def summon(cls) -> T:
-        try:
-            r = cls.__pool__.__getattribute__(cls.__pool_key__())
-        except AttributeError:
-            r = cls()
-            cls.__pool__.__setattr__(cls.__pool_key__(), r)
-        return r
+    def summon(cls) -> typing.Self:
+        """线程局部实例获取方法"""
+        if not hasattr(cls._thread_local, "instance"):
+            cls._thread_local.instance = cls()  # [[1]]
+        return cls._thread_local.instance
