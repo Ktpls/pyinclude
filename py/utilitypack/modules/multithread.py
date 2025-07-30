@@ -4,6 +4,7 @@ import enum
 import threading
 import traceback
 import typing
+import functools
 from .misc import FunctionalWrapper, EasyWrapper, Switch
 from .time import PreciseSleep
 
@@ -376,6 +377,48 @@ class ThreadLocalSingleton:
     @classmethod
     def summon(cls) -> typing.Self:
         """线程局部实例获取方法"""
-        if not hasattr(cls._thread_local, "instance"):
-            cls._thread_local.instance = cls()  # [[1]]
+        if not cls.__thread_local_singleton_test_val__():
+            cls.__thread_local_singleton_set_val__(cls())
+        return cls.__thread_local_singleton_get_val__()
+
+    @classmethod
+    def __thread_local_singleton_set_val__(cls, val):
+        cls._thread_local.instance = val
+
+    @classmethod
+    def __thread_local_singleton_get_val__(cls):
         return cls._thread_local.instance
+
+    @classmethod
+    def __thread_local_singleton_test_val__(cls):
+        return (
+            hasattr(cls._thread_local, "instance")
+            and cls.__thread_local_singleton_get_val__()
+        )
+
+    @classmethod
+    def __thread_local_singleton_create_instance__(cls):
+        cls.__thread_local_singleton_set_val__(cls())
+
+    @classmethod
+    def __thread_local_singleton_release__(cls):
+        del cls._thread_local.instance
+
+    @classmethod
+    @EasyWrapper
+    def WithMe(f:typing.Callable, cls: ThreadLocalSingleton):
+        @functools.wraps(f)
+        def f2(*a, **kw):
+            if not (
+                built_before_this_frame := cls.__thread_local_singleton_test_val__()
+            ):
+                cls.__thread_local_singleton_set_val__(cls())
+            try:
+                return f(*a, **kw)
+            except Exception as e:
+                raise e
+            finally:
+                if not built_before_this_frame:
+                    cls.__thread_local_singleton_release__()
+
+        return f2

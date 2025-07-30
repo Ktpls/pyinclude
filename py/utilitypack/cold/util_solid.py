@@ -834,7 +834,7 @@ class DistillLibraryFromDependency:
             .collect(Stream.Collectors.list)
         )
         defsRequiringAdding = []
-        distilled_lib = ""
+        distilled_lib = DefinitionList2DistilledLibrary(defsRequiringAdding, libDefined)
         while True:
             addedDef = (
                 Stream(undef)

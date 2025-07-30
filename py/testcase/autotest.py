@@ -988,6 +988,32 @@ class ThreadContextTest(unittest.TestCase):
         th.start()
         th.join()
 
+    def test_with_me_method_decorator(self):
+        """
+        测试WithMe方法作为装饰器使用时的功能
+        """
 
-# ThreadContextTest().test_accessable_in_thread()
+        # 使用WithMe装饰器装饰一个函数
+        @ThreadContextTest.ChildClass.WithMe()
+        def test_function():
+            instance = ThreadContextTest.ChildClass.summon()
+            instance.v = 42
+            return instance.v
+
+        def new_thread():
+            # 创建一个线程，并调用装饰后的函数
+            result = test_function()
+            # 验证函数被调用并且返回了正确值
+            self.assertEqual(result, 42)
+            # 资源在decorator的上下文结束后被立即释放，即使线程还未结束
+            self.assertFalse(
+                ThreadContextTest.ChildClass.__thread_local_singleton_test_val__()
+            )
+
+        t = threading.Thread(target=new_thread)
+        t.start()
+        t.join()
+
+
+# ThreadContextTest().test_with_me_method_decorator()
 unittest.main()
