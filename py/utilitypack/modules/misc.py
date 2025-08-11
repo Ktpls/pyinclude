@@ -1611,6 +1611,7 @@ class Stream[T](typing.Iterable[T]):
 
     def gather_thread_future[R_Futr](
         self: Stream[concurrent.futures.Future[R_Futr]],
+        keep_in_order: bool = True,
     ) -> Stream[R_Futr]:
         """
         use like:
@@ -1626,11 +1627,14 @@ class Stream[T](typing.Iterable[T]):
                 .gather_thread_future()
                 .collect(list)
             )
-        wont keep order
+        goes faster if not keep order maybe
         """
-        return self.wrap_iterator(concurrent.futures.as_completed).map(
-            lambda x: x.result()
+        order_considered = (
+            self.wrap_iterator(concurrent.futures.as_completed)
+            if not keep_in_order
+            else self
         )
+        return order_considered.map(lambda x: x.result())
 
     def wrap_iterator[R](
         self, iterator: typing.Callable[[typing.Iterable[T]], typing.Iterable[R]]

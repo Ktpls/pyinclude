@@ -889,14 +889,13 @@ class StreamTest(unittest.TestCase):
             return x + 1
 
         pool = concurrent.futures.ThreadPoolExecutor()
-        # to set cuz wont keep in order
         result = (
             Stream([1, 2, 3])
             .map(lambda x: pool.submit(task, x=x))
             .gather_thread_future()
-            .to_set()
+            .collect(list)
         )
-        self.assertSetEqual(result, {2, 3, 4})
+        self.assertEqual(result, [2, 3, 4])
 
     def test_reversed(self):
         result = Stream([1, 2, 3]).reversed().to_list()
