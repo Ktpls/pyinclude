@@ -70,7 +70,11 @@ class DockerBuilder:
 
     @CwdProtected
     def recompose(self, remove_orphans: bool = None):
-        return self.compose_down().compose_up()
+        try:
+            self.compose_down()
+        except:
+            pass
+        return self.compose_up()
 
     @CwdProtected
     def compose_down(self, remove_orphans: bool = None):

@@ -26,10 +26,12 @@ class DbEntityBaseMixin:
 
     def init(self):
         self.id = self.id or uuid.uuid4().hex
-        self.create_time = self.create_time or time.strftime(
-            "%Y-%m-%d-%H:%M:%S", time.localtime()
-        )
+        self.create_time = self.create_time or self.nowtime()
         return self
+
+    @staticmethod
+    def nowtime():
+        return time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime())
 
     def added(self, session: sqlalchemy.orm.Session):
         self.init()

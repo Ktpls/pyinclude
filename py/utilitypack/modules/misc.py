@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import collections
 import concurrent.futures
@@ -8,20 +9,21 @@ import datetime
 import enum
 import functools
 import inspect
+import io
 import itertools
 import json
 import logging
 import os
 import re
 import subprocess
+import sys
+import threading
 import time
 import types
 import typing
+
 from .io import EnsureDirectoryExists
 from .time import SingleSectionedTimer
-import io
-import sys
-import threading
 
 EPS = 1e-10
 
@@ -1080,28 +1082,24 @@ class Stream[T](typing.Iterable[T]):
     ) -> typing.Callable[[T], R]:
         def _to_be_unpacked(pred, pred_option: Stream.PredProcessOption):
             if pred_option.enable_unpacking:
-                if (
-                    inspect.isfunction(pred)
-                    and len(inspect.signature(pred).parameters) > 1
-                ):
+
+                def get_arg_must_specified(pred: typing.Callable):
+                    return [
+                        p
+                        for p in inspect.signature(pred).parameters.values()
+                        if p.kind
+                        in [
+                            inspect.Parameter.POSITIONAL_ONLY,
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        ]
+                        and p.default == inspect.Parameter.empty
+                    ]
+
+                if inspect.isfunction(pred) and len(get_arg_must_specified(pred)) > 1:
                     return True
                 if (
                     inspect.isclass(pred)
-                    and len(
-                        [
-                            p
-                            for p in inspect.signature(
-                                pred.__init__
-                            ).parameters.values()
-                            if p.kind
-                            in [
-                                inspect.Parameter.POSITIONAL_ONLY,
-                                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                            ]
-                            and p.default == inspect.Parameter.empty
-                        ]
-                    )
-                    > 2
+                    and len(get_arg_must_specified(pred.__init__)) > 2
                 ):
                     return True
             return False
