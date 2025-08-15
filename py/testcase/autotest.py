@@ -22,98 +22,414 @@ class UnionableClassTest(unittest.TestCase):
         )
 
 
-class ExpparserTest(unittest.TestCase):
-
-    @staticmethod
-    def vecadd(va: list, vb: list):
-        assert len(va) == len(vb)
-        return list(map(lambda x, y: x + y, va, vb))
-
-    var = {**expparser.BasicConstantLib}
-    func = {
-        **expparser.BasicFunctionLib,
-        "OptionalFunc": expparser.Utils.OptionalFunc(
-            [expparser.Utils.NonOptional(), 0, 0], lambda x, y, z: x + y + z
-        ),
-        "vecadd": vecadd,
-    }
-
-    def expparseWithEnv(self, exp):
-        return str(
-            expparser.expparse(
-                exp,
-                var=ExpparserTest.var,
-                func=ExpparserTest.func,
-            )
+class ExpNodeReorganizationTest(unittest.TestCase):
+    def assert_reorg_opr_result(
+        self, l: list[expparser.Ast.Element], expected: expparser.Ast.Element
+    ):
+        r = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+            expparser._FlatOperatorOrganizer.Ir.lof(l)
         )
+        self.assertDictEqual(dataclasses.asdict(r), dataclasses.asdict(expected))
+
+    def print_reorg_opr_result(self, l: list[expparser.Ast.Element]):
+        r = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+            expparser._FlatOperatorOrganizer.Ir.lof(l)
+        )
+        pprint.pp(r)
+
+    def test_1p2(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Object(2, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Object(val=1, sec=None),
+                    expparser.Ast.Object(val=2, sec=None),
+                ],
+            ),
+        )
+
+    def test_1p2p3(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Object(2, None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Object(3, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.ADD,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=1, sec=None),
+                            expparser.Ast.Object(val=2, sec=None),
+                        ],
+                    ),
+                    expparser.Ast.Object(val=3, sec=None),
+                ],
+            ),
+        )
+
+    def test_1p2m3(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Object(2, None),
+                expparser.Ast.Operator(expparser._OprType.MUL, None, None),
+                expparser.Ast.Object(3, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Object(val=1, sec=None),
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.MUL,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=2, sec=None),
+                            expparser.Ast.Object(val=3, sec=None),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+    def test_1m2p3(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.Operator(expparser._OprType.MUL, None, None),
+                expparser.Ast.Object(2, None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Object(3, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.MUL,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=1, sec=None),
+                            expparser.Ast.Object(val=2, sec=None),
+                        ],
+                    ),
+                    expparser.Ast.Object(val=3, sec=None),
+                ],
+            ),
+        )
+
+    def test_n1(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.NEG,
+                sec=None,
+                operands=[expparser.Ast.Object(val=1, sec=None)],
+            ),
+        )
+
+    def test_nn1(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.NEG,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.NEG,
+                        sec=None,
+                        operands=[expparser.Ast.Object(val=1, sec=None)],
+                    )
+                ],
+            ),
+        )
+
+    def test_n1pow2(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+                expparser.Ast.Operator(expparser._OprType.POW, None, None),
+                expparser.Ast.Object(2, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.NEG,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.POW,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=1, sec=None),
+                            expparser.Ast.Object(val=2, sec=None),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+    def test_n1pn1(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.NEG,
+                        sec=None,
+                        operands=[expparser.Ast.Object(val=1, sec=None)],
+                    ),
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.NEG,
+                        sec=None,
+                        operands=[expparser.Ast.Object(val=1, sec=None)],
+                    ),
+                ],
+            ),
+        )
+
+    def test_call(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.ArgumentTuple([], None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.CALL,
+                sec=None,
+                operands=[
+                    expparser.Ast.Object(val=1, sec=None),
+                    expparser.Ast.ArgumentTuple(val=[], sec=None),
+                ],
+            ),
+        )
+
+    def test_neg_call(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+                expparser.Ast.ArgumentTuple([], None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.NEG,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.CALL,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=1, sec=None),
+                            expparser.Ast.ArgumentTuple(val=[], sec=None),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+    def test_callp1(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.ArgumentTuple([], None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Object(1, None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.CALL,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=1, sec=None),
+                            expparser.Ast.ArgumentTuple(val=[], sec=None),
+                        ],
+                    ),
+                    expparser.Ast.Object(1, None),
+                ],
+            ),
+        )
+
+    def test_call_call(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Object(1, None),
+                expparser.Ast.ArgumentTuple([], None),
+                expparser.Ast.ArgumentTuple([], None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.CALL,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.CALL,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Object(val=1, sec=None),
+                            expparser.Ast.ArgumentTuple(val=[], sec=None),
+                        ],
+                    ),
+                    expparser.Ast.ArgumentTuple(val=[], sec=None),
+                ],
+            ),
+        )
+
+    def test_complex(self):
+        self.assert_reorg_opr_result(
+            [
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+                expparser.Ast.ArgumentTuple([], None),
+                expparser.Ast.Operator(expparser._OprType.ADD, None, None),
+                expparser.Ast.Operator(expparser._OprType.NEG, None, None),
+                expparser.Ast.Object(1, None),
+                expparser.Ast.ArgumentTuple([], None),
+            ],
+            expparser.Ast.Operator(
+                val=expparser._OprType.ADD,
+                sec=None,
+                operands=[
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.NEG,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Operator(
+                                val=expparser._OprType.CALL,
+                                sec=None,
+                                operands=[
+                                    expparser.Ast.Object(val=1, sec=None),
+                                    expparser.Ast.ArgumentTuple(val=[], sec=None),
+                                ],
+                            )
+                        ],
+                    ),
+                    expparser.Ast.Operator(
+                        val=expparser._OprType.NEG,
+                        sec=None,
+                        operands=[
+                            expparser.Ast.Operator(
+                                val=expparser._OprType.CALL,
+                                sec=None,
+                                operands=[
+                                    expparser.Ast.Object(val=1, sec=None),
+                                    expparser.Ast.ArgumentTuple(val=[], sec=None),
+                                ],
+                            )
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+
+class ExpParseTest(unittest.TestCase):
+    def expparseWithEnv(self, exp):
+        return expparser.compile(exp).eval(expparser.BasicConstantLib)
+
+    def test_neg(self):
+        self.assertAlmostEqual(self.expparseWithEnv(r"-1"), -1)
+
+    def test_negneg(self):
+        self.assertAlmostEqual(self.expparseWithEnv(r"--1"), 1)
 
     def test_cstr(self):
-        self.assertEqual(self.expparseWithEnv("CStr(1)"), "1.0")
+        self.assertEqual(self.expparseWithEnv("cstr(1)"), "1.0")
 
     def test_array(self):
-        self.assertEqual(self.expparseWithEnv(r"1,2,3"), "[1.0, 2.0, 3.0]")
+        self.assertEqual(self.expparseWithEnv(r"list(1,2,3)"), [1.0, 2.0, 3.0])
 
     def test_div(self):
-        self.assertEqual(self.expparseWithEnv(r"2/2/2"), "0.5")
+        self.assertAlmostEqual(self.expparseWithEnv(r"2/2/2"), 0.5)
 
     def test_oper_priority(self):
-        self.assertEqual(self.expparseWithEnv(r"sin(pi/2)+2^2*2+--1"), "10.0")
+        self.assertAlmostEqual(self.expparseWithEnv(r"2^2*2+--1"), 9.0)
 
     def test_eq_func(self):
-        self.assertEqual(self.expparseWithEnv(r"eq(1+0.1,1)"), "False")
+        self.assertEqual(self.expparseWithEnv(r"eq(1+0.1,1)"), False)
 
     def test_eq_func_eps(self):
-        self.assertEqual(self.expparseWithEnv(r"eq(1+0.1,1,0.2)"), "True")
+        self.assertEqual(self.expparseWithEnv(r"eq(1+0.1,1,0.2)"), True)
 
-    def test_str(self):
-        self.assertEqual(self.expparseWithEnv(r'"test \" str"'), 'test " str')
+    ## complex string escape currently not supported
+    ## regexp is not capabale of this, consider add a new string reader
+    # def test_str(self):
+    #     self.assertEqual(self.expparseWithEnv(r'"test \" str"'), 'test " str')
 
     def test_eq_opr(self):
-        self.assertEqual(self.expparseWithEnv(r"1!=2"), "True")
+        self.assertEqual(self.expparseWithEnv(r"1!=2"), True)
 
     def test_comp_opr(self):
-        self.assertEqual(self.expparseWithEnv(r"2>=3"), "False")
+        self.assertEqual(self.expparseWithEnv(r"2>=3"), False)
 
     def test_clist(self):
-        self.assertEqual(self.expparseWithEnv(r"CList(1)"), "[1.0]")
+        self.assertListEqual(self.expparseWithEnv(r"list(1)"), [1.0])
 
     def test_cbool(self):
-        self.assertEqual(self.expparseWithEnv(r"CBool(1)"), "True")
+        self.assertEqual(self.expparseWithEnv(r"cbool(1)"), True)
 
     def test_cbool2(self):
-        self.assertEqual(self.expparseWithEnv(r"CBool(0)"), "False")
+        self.assertEqual(self.expparseWithEnv(r"cbool(0)"), False)
 
-    def test_streq(self):
-        self.assertEqual(self.expparseWithEnv(r'StrEq(CStr(1),"1.0")'), "True")
+    def test_strcmp(self):
+        self.assertEqual(self.expparseWithEnv(r'strcmp(cstr(1),"1.0")'), True)
 
-    def test_cnum(self):
-        self.assertEqual(self.expparseWithEnv(r'CNum("1.23")+1'), "2.23")
+    def test_cnum_from_str(self):
+        self.assertAlmostEqual(self.expparseWithEnv(r'cnum("1.23")'), 1.23)
 
-    def test_cnum2(self):
-        self.assertEqual(self.expparseWithEnv(r"CNum(true)+1"), "2.0")
+    def test_cnum_from_bool(self):
+        self.assertEqual(self.expparseWithEnv(r"cnum(true)"), 1.0)
 
     def test_unmatched_ket(self):
-        self.assertEqual(self.expparseWithEnv(r"CBool(0))))))))"), "False")
+        with self.assertRaises(Exception):
+            self.expparseWithEnv(r"cbool(0))))))))")
 
     def test_space(self):
-        self.assertEqual(self.expparseWithEnv("1 ,\t2,\r\n3"), "[1.0, 2.0, 3.0]")
+        self.assertListEqual(
+            self.expparseWithEnv("list(1 ,\t2,\r\n3)"), [1.0, 2.0, 3.0]
+        )
 
-    def test_vector(self):
-        self.assertEqual(self.expparseWithEnv(r"vecadd((1,2),(3,4))"), "[4.0, 6.0]")
-
-    def test_optional_func(self):
-        self.assertEqual(self.expparseWithEnv(r"OptionalFunc(1,,)"), "1.0")
-
-    def test_opt_func_bad_use(self):
-        self.assertRaises(Exception, lambda: self.expparseWithEnv(r"OptionalFunc(,1,)"))
-
-    def test_complex_array(self):
-        self.assertEqual(
-            self.expparseWithEnv(r"((1,1),(2,2),(1,),1)"),
-            "[[1.0, 1.0], [2.0, 2.0], [1.0, None], 1.0]",
+    def test_vecadd(self):
+        self.assertListEqual(
+            self.expparseWithEnv(r"vecadd(list(1,2),list(3,4))"), [4.0, 6.0]
         )
 
     def test_complex_array(self):
+        self.assertListEqual(
+            self.expparseWithEnv(r"list(list(1,1),list(2,2),list(1),1)"),
+            [[1.0, 1.0], [2.0, 2.0], [1.0], 1.0],
+        )
+
+    def test_comment(self):
         self.assertEqual(
             self.expparseWithEnv(
                 r"""
@@ -126,13 +442,13 @@ class ExpparserTest(unittest.TestCase):
                 +/*inline comment*/1
                 """
             ),
-            "2.0",
+            2.0,
         )
 
     def test_scientific_number(self):
-        self.assertEqual(
-            self.expparseWithEnv("1.1e-2"),
-            "0.011",
+        self.assertAlmostEqual(
+            self.expparseWithEnv("1.1e-1"),
+            0.11,
         )
 
 

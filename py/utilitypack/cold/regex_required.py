@@ -1,240 +1,30 @@
-
+from __future__ import annotations
 import regex
 import dataclasses
 import typing
 import enum
 from ..modules.solid_dep_required.regex_required import FSMUtil
-from ..modules.misc import NormalizeCrlf
+from ..modules.misc import NormalizeCrlf, Section
 import math
 import sys
 import uuid
 
+
 class expparser:
-    EPS = 1e-10
-    """
-    TODO:
-    numlike
-        tensor operator
-        string operator
-        named parameter in function call
-            foo(1, 2, 3, a=1, b=2)
-        delayed evaluation optimization
-    """
-
-    @dataclasses.dataclass
-    class evaluator:
-        class EvalType(enum.Enum):
-            literal = 0
-            operator = 1
-            func = 2
-            var = 3
-            lyst = 4
-
-        type: EvalType
-        value: typing.Any
-        para: typing.Any
-
-        @staticmethod
-        def ofOpr(opr: "expparser._OprType", para):
-            return expparser.evaluator(
-                expparser.evaluator.EvalType.operator, opr, para
-            )
-
-        @staticmethod
-        def ofLiteral(literal):
-            return expparser.evaluator(
-                expparser.evaluator.EvalType.literal, literal, None
-            )
-
-        @staticmethod
-        def ofFunc(func, para):
-            return expparser.evaluator(
-                expparser.evaluator.EvalType.func, func, para
-            )
-
-        @staticmethod
-        def ofVar(var):
-            return expparser.evaluator(expparser.evaluator.EvalType.var, var, None)
-
-        @staticmethod
-        def ofList(var):
-            return expparser.evaluator(expparser.evaluator.EvalType.lyst, var, None)
-
-        def eval(self, var=dict(), func=dict()):
-            if self.type == expparser.evaluator.EvalType.literal:
-                return self.value
-            elif self.type == expparser.evaluator.EvalType.operator:
-                para = [p.eval(var, func) for p in self.para]
-                return self.value.do(para)
-            elif self.type == expparser.evaluator.EvalType.func:
-                assert self.value in func
-                para = [p.eval(var, func) for p in self.para]
-                return func[self.value](*para)
-            elif self.type == expparser.evaluator.EvalType.var:
-                assert self.value in var
-                return var[self.value]
-            elif self.type == expparser.evaluator.EvalType.lyst:
-                value = [p.eval(var, func) for p in self.value]
-                return value
-
-        def __repr__(self, indentLvl: int = 0) -> str:
-            indent = " " * 4 * indentLvl
-            tipe = f"{indent}{self.type}, "
-            if self.type == expparser.evaluator.EvalType.lyst:
-                val = f"list\n"
-                child = "".join(
-                    [p.__repr__(indentLvl=indentLvl + 1) for p in self.value]
-                )
-            else:
-                val = f"{self.value}\n"
-                child = ""
-                if self.para is not None:
-                    child = "".join(
-                        [p.__repr__(indentLvl=indentLvl + 1) for p in self.para]
-                    )
-                else:
-                    child = ""
-            return tipe + val + child
-
     class _TokenType(enum.Enum):
-        NUMLIKE = 1
+        LITERAL = 1
         OPR = 2
         BRA = 3
         KET = 4
         EOF = 5
-        IDR = 6
+        IDENTIFIER = 6
         SPACE = 7
         COMMA = 8
         COMMENT = 9
 
-    class _State(enum.Enum):
-        START = 1
-        NUM = 2
-        NEG = 3
-        OPR = 4
-        END = 5
-        IDR = 6
-
-    @dataclasses.dataclass
-    class _OprPriorityLeap:
-        pos: int
-        pribefore: int
-        priafter: int
-
-    class _NumLikeUnionUtil:
-        class NumLikeException(Exception):
-            pass
-
-        class NumLikeType(enum.Enum):
-            NUM = 0
-            STR = 1
-            LIST = 2
-            BOOL = 3
-            NONE = 4
-
-        @staticmethod
-        def TypeOf(nl):
-            if isinstance(nl, str):
-                return expparser._NumLikeUnionUtil.NumLikeType.STR
-            elif isinstance(nl, typing.Iterable):
-                return expparser._NumLikeUnionUtil.NumLikeType.LIST
-            elif isinstance(nl, float):
-                return expparser._NumLikeUnionUtil.NumLikeType.NUM
-            elif isinstance(nl, int):
-                return expparser._NumLikeUnionUtil.NumLikeType.NUM
-            elif isinstance(nl, bool):
-                return expparser._NumLikeUnionUtil.NumLikeType.BOOL
-            elif nl is None:
-                return expparser._NumLikeUnionUtil.NumLikeType.NONE
-            else:
-                raise expparser._NumLikeUnionUtil.NumLikeException()
-
-        # imexplicit conversion
-        @staticmethod
-        def ToNum(nl):
-            t = expparser._NumLikeUnionUtil.TypeOf(nl)
-            if t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
-                return float(nl)
-            elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
-                return 1.0 if nl else 0.0
-            else:
-                raise expparser._NumLikeUnionUtil.NumLikeException()
-
-        @staticmethod
-        def ToList(nl):
-            t = expparser._NumLikeUnionUtil.TypeOf(nl)
-            if t == expparser._NumLikeUnionUtil.NumLikeType.LIST:
-                return list(nl)
-            elif t == expparser._NumLikeUnionUtil.NumLikeType.STR:
-                return [nl]
-            elif t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
-                return [nl]
-            elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
-                return [nl]
-            elif t == expparser._NumLikeUnionUtil.NumLikeType.NONE:
-                return [nl]
-            else:
-                raise expparser._NumLikeUnionUtil.NumLikeException()
-
-        @staticmethod
-        def ToBool(nl):
-            t = expparser._NumLikeUnionUtil.TypeOf(nl)
-            if t == expparser._NumLikeUnionUtil.NumLikeType.NUM:
-                return nl > 0
-            elif t == expparser._NumLikeUnionUtil.NumLikeType.BOOL:
-                return nl
-            else:
-                raise expparser._NumLikeUnionUtil.NumLikeException()
-
-        @staticmethod
-        def ToProperFormFromAny(nl):
-            # the adaptor for data to be proper
-            # after which there will be no int form, they all stored as float
-            # this will deal with more situations, so TypeOf is not proper here
-            if isinstance(nl, str):
-                return nl
-            elif isinstance(nl, typing.Iterable):
-                return list(nl)
-            elif isinstance(nl, float):
-                return nl
-            elif isinstance(nl, bool):
-                # isinstance(True, int)==True
-                return nl
-            elif isinstance(nl, int):
-                return float(nl)
-            elif nl is None:
-                return nl
-            else:
-                raise expparser._NumLikeUnionUtil.NumLikeException()
-
-    class _ParseException(Exception):
-        pass
-
-    @staticmethod
-    def unpackParaArray(f):
-        def f2(a):
-            if (
-                expparser._NumLikeUnionUtil.TypeOf(a)
-                == expparser._NumLikeUnionUtil.NumLikeType.LIST
-            ):
-                return f(*a)
-            else:
-                return f(a)
-
-        return f2
-
-    @staticmethod
-    def CList(a):
-        if (
-            expparser._NumLikeUnionUtil.TypeOf(a)
-            == expparser._NumLikeUnionUtil.NumLikeType.LIST
-        ):
-            return a
-        else:
-            return [a]
-
-    class _OprException(Exception):
-        pass
+    class _FSMGraphNode(enum.Enum):
+        start = 1
+        got_obj = 2
 
     class _OprType(enum.Enum):
         UNSPECIFIED = 0
@@ -254,10 +44,11 @@ class expparser:
         AND = 15
         OR = 16
         XOR = 17
+        CALL = 18
 
         @staticmethod
         def throw_opr_exception(s):
-            raise expparser._OprException(f"bad opr {s}")
+            raise ValueError(f"bad opr {s}")
 
         def getPriority(self):
             if self in [
@@ -279,10 +70,11 @@ class expparser:
                 return 3
             elif self in [expparser._OprType.MUL, expparser._OprType.DIV]:
                 return 4
-            elif self == expparser._OprType.POW:
-                return 5
             elif self in [expparser._OprType.NEG, expparser._OprType.NOT]:
-                # unaries
+                return 5
+            elif self == expparser._OprType.POW:
+                return 6
+            elif self in [expparser._OprType.CALL]:
                 return 99
             else:
                 expparser._OprType.throw_opr_exception(self)
@@ -312,73 +104,45 @@ class expparser:
 
         def do(self, arg):
             if self == expparser._OprType.ADD:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) + expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] + arg[1]
             elif self == expparser._OprType.SUB:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) - expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] - arg[1]
             elif self == expparser._OprType.MUL:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) * expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] * arg[1]
             elif self == expparser._OprType.DIV:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) / expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] / arg[1]
             elif self == expparser._OprType.POW:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) ** expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] ** arg[1]
             elif self == expparser._OprType.NEG:
-                return -expparser._NumLikeUnionUtil.ToNum(arg[0])
+                return -arg[0]
             elif self == expparser._OprType.NEQ:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) != expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] != arg[1]
             elif self == expparser._OprType.EQ:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) == expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] == arg[1]
             elif self == expparser._OprType.GT:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) > expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] > arg[1]
             elif self == expparser._OprType.GE:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) >= expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] >= arg[1]
             elif self == expparser._OprType.LT:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) < expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] < arg[1]
             elif self == expparser._OprType.LE:
-                return expparser._NumLikeUnionUtil.ToNum(
-                    arg[0]
-                ) <= expparser._NumLikeUnionUtil.ToNum(arg[1])
+                return arg[0] <= arg[1]
             elif self == expparser._OprType.NOT:
-                return not expparser._NumLikeUnionUtil.ToBool(arg[0])
+                return not arg[0]
             elif self == expparser._OprType.AND:
-                return expparser._NumLikeUnionUtil.ToBool(
-                    arg[0]
-                ) and expparser._NumLikeUnionUtil.ToBool(arg[1])
+                return arg[0] and arg[1]
             elif self == expparser._OprType.OR:
-                return expparser._NumLikeUnionUtil.ToBool(
-                    arg[0]
-                ) or expparser._NumLikeUnionUtil.ToBool(arg[1])
+                return arg[0] or arg[1]
             elif self == expparser._OprType.XOR:
-                return expparser._NumLikeUnionUtil.ToBool(
-                    arg[0]
-                ) ^ expparser._NumLikeUnionUtil.ToBool(arg[1])
+                return arg[0] ^ arg[1]
+            elif self == expparser._OprType.CALL:
+                return arg[0](*(arg[1]))
             else:
                 expparser._OprType.throw_opr_exception(self)
 
-        def isUnary(self):
-            return self in [expparser._OprType.NEG, expparser._OprType.NOT]
-
     regex_num = r"(?<eff>[0-9]+(?:\.[0-9]+)?)(?:e(?<pow>[+-]?[0-9]+))?"
-    _matcherList = [
+    regex_str = r'"(?<content>.*?)(?<=[^\\]|\\\\)"'
+    matchers = [
         # comment "/" out priored the operator "/"
         FSMUtil.RegexpTokenMatcher(exp=r"^//.+?\n", type=_TokenType.COMMENT),
         FSMUtil.RegexpTokenMatcher(exp=r"^/\*.+?\*/", type=_TokenType.COMMENT),
@@ -389,13 +153,13 @@ class expparser:
             exp=r"^[*/+\-^=<>&|]", type=_TokenType.OPR
         ),  # single width operator
         FSMUtil.RegexpTokenMatcher(
-            exp=regex_num,
-            type=_TokenType.NUMLIKE,
+            exp="^" + regex_num,
+            type=_TokenType.LITERAL,
         ),
         # cant process r'"\\"' properly, but simply ignore it. cuz \ is not a thing requiring processing
-        FSMUtil.RegexpTokenMatcher(exp=r'^".+?(?<!\\)"', type=_TokenType.NUMLIKE),
+        FSMUtil.RegexpTokenMatcher(exp="^" + regex_str, type=_TokenType.LITERAL),
         FSMUtil.RegexpTokenMatcher(
-            exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=_TokenType.IDR
+            exp=r"^[A-Za-z_][A-Za-z0-9_]*", type=_TokenType.IDENTIFIER
         ),
         FSMUtil.RegexpTokenMatcher(exp=r"^\(", type=_TokenType.BRA),
         FSMUtil.RegexpTokenMatcher(exp=r"^\)", type=_TokenType.KET),
@@ -404,382 +168,473 @@ class expparser:
         FSMUtil.RegexpTokenMatcher(exp=r"^[\s\r\n\t]+", type=_TokenType.SPACE),
     ]
 
-    @staticmethod
-    def _NextToken(s, i=0):
-        def getNextToken(s, i):
-            while True:
-                ret = FSMUtil.getToken(s, i, expparser._matcherList)
-                if ret.type not in [
-                    expparser._TokenType.SPACE,
-                    expparser._TokenType.COMMENT,
-                ]:
-                    break
-                else:
-                    i = ret.end
-            if ret.type == expparser._TokenType.NUMLIKE:
-                # here is only num and str without other numlike types
-                if len(ret.value) >= 2 and ret.value[0] == '"':
-                    # is str
-                    ret.start = ret.start
-                    ret.value = ret.value[1:-1].replace(r"\"", '"')
-                else:
-                    ret.value = float(ret.value)
-            elif ret.type == expparser._TokenType.OPR:
-                ret.value = expparser._OprType.fromStr(ret.value)
-            return ret
+    class Ast:
+        @dataclasses.dataclass
+        class Element:
+            val: typing.Any
+            sec: typing.Optional[Section]
 
-        return getNextToken(s, i)
+            def eval(self, env: typing.Optional[dict[str, typing.Any]] = None): ...
+
+        @dataclasses.dataclass
+        class Object(Element):
+            def eval(self, env: typing.Optional[dict[str, typing.Any]] = None):
+                return self.val
+
+        @dataclasses.dataclass
+        class Literal(Object):
+            @staticmethod
+            def of_str_literal(str_lit: str, sec: Section):
+                if m := regex.match(f"^{expparser.regex_num}$", str_lit):
+                    eff, pow = m.groups()
+                    return expparser.Ast.Literal(
+                        val=float(eff) * 10 ** (float(pow) if pow else 0), sec=sec
+                    )
+                elif m := regex.match(f"^{expparser.regex_str}$", str_lit):
+                    return expparser.Ast.Literal(val=m.group("content"), sec=sec)
+                else:
+                    raise ValueError("Invalid literal")
+
+        @dataclasses.dataclass
+        class Identifier(Object):
+            def eval(self, env: typing.Optional[dict[str, typing.Any]] = None):
+                assert self.val in env
+                return env[self.val]
+
+        @dataclasses.dataclass
+        class ArgumentTuple(Object):
+            val: list[expparser.Ast.Element]
+
+            def eval(self, env: typing.Optional[dict[str, typing.Any]] = None):
+                return [o.eval(env) for o in self.val]
+
+        @dataclasses.dataclass
+        class Operator(Element):
+            val: expparser._OprType
+            operands: typing.Optional[list[expparser.Ast.Object]]
+
+            def eval(self, env: typing.Optional[dict[str, typing.Any]] = None):
+                return self.val.do([o.eval(env) for o in self.operands])
 
     @dataclasses.dataclass
-    class _ExpParserResult:
-        val: typing.Any
-        end: int
-        endedby: "expparser._TokenType"
+    class _ReadEndState:
+        result: expparser.Ast.Element
+        ended_by: FSMUtil.Token
 
-    @staticmethod
-    def _expparse_recursive__comma_collector_wrapper(s, i=0):
-        nextval = expparser._expparse_recursive(s, i)
-        if nextval.endedby == expparser._TokenType.COMMA:
-            vallist = [nextval.val]
-            while True:
-                nextval = expparser._expparse_recursive(s, nextval.end)
-                vallist.append(nextval.val)
-                if nextval.endedby != expparser._TokenType.COMMA:
-                    break
-            retval = expparser.evaluator.ofList(vallist)
-        else:
-            retval = (
-                nextval.val
-            )  # should be converted into evaluator by expparse_recursive
-        return expparser._ExpParserResult(
-            val=retval, end=nextval.end, endedby=nextval.endedby
-        )
+    class _FlatOperatorOrganizer:
 
-    @staticmethod
-    def _expparse_recursive(
-        s,
-        startPos=0,
-    ):
-        # fsm fields
-        state = expparser._State.START
-        token: FSMUtil.Token = None
-        # never modify peekToken
-        peekToken = expparser._NextToken(s, startPos)
+        class State(enum.Enum):
+            BinaryOprWait1stObj = enum.auto()
+            BinaryOprWait2ndObj = enum.auto()
+            BinaryOprWaitOpr = enum.auto()
+            BinaryOprWaitNextOpr = enum.auto()
+            CallReadArg = enum.auto()
+            ReadUnaryOpr = enum.auto()
+            GotTargetOfUnaryWaitingBreak = enum.auto()
 
-        # buffer
-        tokenList: list[FSMUtil.Token] = list()
+        @dataclasses.dataclass
+        class Ir:
+            elm: expparser.Ast.Element
+            organized: bool = False
+            # organized, meaning regard it as an object node.
+            # used on nested elm node like opr(a,b), which is actually an obj node instead of pure opr node
 
-        # for operator priority
-        oprRisingBeginPosList: list[expparser._OprPriorityLeap] = list()
-
-        def RaiseTokenException(token: FSMUtil.Token):
-            raise expparser._ParseException(
-                f'unexpected {token.type}("{token.value}") at {token.start}'
-            )
-
-        def ClearOprSectionAssumingPeer(begin, end):
-            nonlocal tokenList, oprRisingBeginPosList
-            # cache the section to use easily pop and push
-            section = tokenList[begin:end]
-            token1st = section[0]
-            if token1st.type == expparser._TokenType.OPR:
-                assert token1st.value.isUnary()
-                # assert unary operators are never at the same priority as other multioperand operators,
-                # so i can deal them seperately
-                val = section[-1]
-                assert val.type == expparser._TokenType.NUMLIKE
-                i = len(section) - 2
-                while True:
-                    # cleaning backwards, which makes it right-nested as a tree
-                    if i < 0:
-                        break
-                    opr = section[i]
-                    i -= 1
-                    assert opr.type == expparser._TokenType.OPR
-                    assert opr.value.isUnary()
-                    val.value = expparser.evaluator.ofOpr(opr.value, [val.value])
-            else:
-                i = 0
-                val = section[0]
-                i += 1
-                while True:
-                    if i >= len(section):
-                        break
-                    opr = section[i]
-                    i += 1
-                    assert i < len(section)
-                    val2 = section[i]
-                    i += 1
-                    val.value = expparser.evaluator.ofOpr(
-                        opr.value, [val.value, val2.value]
-                    )
-            tokenList = tokenList[:begin] + [val] + tokenList[end:]
-            RemapToken()
-            oprRisingBeginPosList.pop()
-
-        def AddNewVirtualTokenValuedByCalculation(
-            subresult: expparser._ExpParserResult,
-        ):
-            nonlocal token, peekToken, state, tokenList
-            tokenList.append(
-                FSMUtil.Token(
-                    expparser._TokenType.NUMLIKE,
-                    subresult.val,
-                    token.start,
-                    subresult.end,
-                )
-            )
-            RemapToken()
-            peekToken = expparser._NextToken(s, subresult.end)
-
-        def DealWithBra():
-            nonlocal token, peekToken, state, tokenList
-            if peekToken.type == expparser._TokenType.KET:
-                """
-                one empty list
-                cant eval with expparse recursive,
-                cuz it returns with None if start follows by eof instantly
-                in this case () can be confused with List(None)
-                """
-                subresult = expparser._ExpParserResult(
-                    expparser.evaluator.ofList([]),
-                    peekToken.end,
-                    expparser._TokenType.KET,
-                )
-            else:
-                subresult = expparser._expparse_recursive__comma_collector_wrapper(
-                    s, token.end
-                )
-            tokenList.pop()  # remove the bra
-            AddNewVirtualTokenValuedByCalculation(subresult)
-            state = expparser._State.NUM
-
-        def DealWithIdentifier():
-            nonlocal token, peekToken, state, tokenList
-            if peekToken.type == expparser._TokenType.BRA:
-                # its a call
-                fooName = token.value
-                # manually move on
-                MoveForwardToNextToken()
-                DealWithBra()
-                para = tokenList[-1].value
-                if para.type == expparser.evaluator.EvalType.lyst:
-                    # unpack list evaluator to param
-                    # it could possibly be the single param, but which is actually a list, like f(list(1,2,3))
-                    # and it will be unpacked weirdly here
-                    para = para.value
-                else:
-                    # single param call, to standard param list form
-                    para = [para]
-                value = expparser.evaluator.ofFunc(fooName, para)
-                tokenList[-1].value = value
-                tokenList = tokenList[:-2] + tokenList[-1:]  # remove the func name
-                RemapToken()
-            else:
-                # its a var
-                # overwrite the identifier with num
-                token.value = expparser.evaluator.ofVar(token.value)
-                token.type = expparser._TokenType.NUMLIKE
-            state = expparser._State.NUM
-
-        def MoveForwardToNextToken():
-            nonlocal token, peekToken, tokenList
-            token = peekToken
-            peekToken = expparser._NextToken(s, token.end)
-            tokenList.append(token)
-            # RemapToken() # not essential here
-            # modifying token also applies on tokenList[-1]
-
-        def RemapToken():
-            nonlocal tokenList, token
-            # reset token to last of token list after modifying tokenList structure
-            if len(tokenList) != 0:
-                token = tokenList[-1]
-            else:
-                # calling any member on this will cause exception
-                token = None
-
-        def doWhenReadNewOpr():
-            nonlocal state, oprRisingBeginPosList, token, tokenList
-            state = expparser._State.OPR
-            lastOprPrior = (
-                oprRisingBeginPosList[-1].priafter
-                if len(oprRisingBeginPosList) > 0
-                else 0
-            )
-            opr = token.value.getPriority()
-            if opr > lastOprPrior:
-                oprRisingBeginPosList.append(
-                    expparser._OprPriorityLeap(
-                        len(tokenList) - 1, lastOprPrior, opr
-                    )
-                )  # len(tokenList) - 1 for opr
-            elif opr < lastOprPrior:
-                while True:
-                    lastOprPrior = (
-                        oprRisingBeginPosList[-1].priafter
-                        if len(oprRisingBeginPosList) > 0
-                        else 0
-                    )
-                    if opr >= lastOprPrior:
-                        break
-                        # clear since last rising, until flat
-                        # len(tokenList)-1 since the lowering opr has been appended
-                    """
-                    for unary, the token before first opr is unwanted to calc
-                    for binary, its necessary
-                    """
-                    ClearOprSectionAssumingPeer(
-                        (
-                            oprRisingBeginPosList[-1].pos
-                            if tokenList[
-                                oprRisingBeginPosList[-1].pos
-                            ].value.isUnary()
-                            else oprRisingBeginPosList[-1].pos - 1
-                        ),
-                        len(tokenList) - 1,  # the new opr
-                    )
-                if opr > lastOprPrior:
-                    # new opr is the new rising
-                    oprRisingBeginPosList.append(
-                        expparser._OprPriorityLeap(
-                            len(tokenList) - 1,
-                            lastOprPrior,
-                            opr,
-                        )
-                    )
-
-        def dealWithExpressionEndSign():
-            nonlocal state, oprRisingBeginPosList, token, tokenList
-            expendpos = token.end
-            endtype = token.type
-            tokenList.pop()  # remove the eof or ket or comma, end sign anyway
-            RemapToken()
-            if len(tokenList) == 0:
-                # empty
-                val = expparser.evaluator.ofLiteral(None)
-            else:
-                # clear all
-                while True:
-                    if len(oprRisingBeginPosList) == 0:
-                        break
-                    ClearOprSectionAssumingPeer(
-                        (
-                            oprRisingBeginPosList[-1].pos
-                            if tokenList[
-                                oprRisingBeginPosList[-1].pos
-                            ].value.isUnary()
-                            else oprRisingBeginPosList[-1].pos - 1
-                        ),
-                        len(tokenList),
-                    )
-                val = tokenList[-1].value
-            return expparser._ExpParserResult(val, expendpos, endtype)
-
-        # the fsm illustrated in notebook
-        while True:
-            MoveForwardToNextToken()
-            if state == expparser._State.START or state == expparser._State.OPR:
-                # expecting numlike, but possible to meet bra, identifier, or unary operator, eof, comma, ket
-                if token.type == expparser._TokenType.BRA:
-                    DealWithBra()
-                elif token.type == expparser._TokenType.NUMLIKE:
-                    token.value = expparser.evaluator.ofLiteral(token.value)
-                    state = expparser._State.NUM
-                elif token.type == expparser._TokenType.IDR:
-                    DealWithIdentifier()
-                elif token.type == expparser._TokenType.OPR:
-                    # maybe unary operator
-                    if token.value == expparser._OprType.SUB:
-                        # to neg
-                        tokenList[-1].value = expparser._OprType.NEG
-                    if not token.value.isUnary():
-                        RaiseTokenException(token)
-                    doWhenReadNewOpr()
-                elif token.type in [
-                    expparser._TokenType.EOF,
-                    expparser._TokenType.KET,
-                    expparser._TokenType.COMMA,
-                ]:
-                    # return
-                    state = expparser._State.END
-                    return dealWithExpressionEndSign()
-                else:
-                    RaiseTokenException(token)
-            elif state == expparser._State.NUM:
-                if token.type == expparser._TokenType.OPR:
-                    doWhenReadNewOpr()
-                elif token.type in [
-                    expparser._TokenType.EOF,
-                    expparser._TokenType.KET,
-                    expparser._TokenType.COMMA,
-                ]:
-                    # return
-                    state = expparser._State.END
-                    return dealWithExpressionEndSign()
-                else:
-                    RaiseTokenException(token)
-            elif state == expparser._State.END:
-                RaiseTokenException(token)
-
-    @staticmethod
-    def elementparse(s):
-        i = 0
-        tokenList: list[FSMUtil.Token] = []
-        while True:
-            token = expparser._NextToken(s, i)
-            tokenList.append(token)
-            i = token.end
-            if token.type == expparser._TokenType.EOF:
-                break
-        var = []
-        func = []
-        for i, tk in enumerate(tokenList):
-            if tk.type == expparser._TokenType.IDR:
-                # peek
-                # wont index overflow cuz there is eof and eof is not identifier
-                if tokenList[i + 1].type == expparser._TokenType.BRA:
-                    func.append(tk.value)
-                else:
-                    var.append(tk.value)
-        return var, func
-
-    @staticmethod
-    def expparse(s, var=dict(), func=dict()):
-        return expparser._expparse_recursive__comma_collector_wrapper(s).val.eval(
-            var, func
-        )
-
-    @staticmethod
-    def compile(s) -> evaluator:
-        return expparser._expparse_recursive__comma_collector_wrapper(s).val
-
-    class Utils:
-        class NonOptionalException(Exception):
-            pass
-
-        class NonOptional:
             @staticmethod
-            def checkParamListIfNonOptional(paramList):
-                for i, p in enumerate(paramList):
-                    if isinstance(p, expparser.Utils.NonOptional):
-                        raise expparser.Utils.NonOptionalException(
-                            f"Nonoptional parameter {i} unspecified"
-                        )
-                return paramList
+            def lof(
+                lelm: list[expparser.Ast.Element],
+            ) -> list[expparser._FlatOperatorOrganizer.Ir]:
+                return [expparser._FlatOperatorOrganizer.Ir(elm=e) for e in lelm]
+
+            @staticmethod
+            def strip(
+                lir: list[expparser._FlatOperatorOrganizer.Ir],
+            ):
+                return [e.elm for e in lir]
+
+            def IsCurNodeOpr(self):
+                return (
+                    isinstance(self.elm, expparser.Ast.Operator) and not self.organized
+                )
+
+            def IsCurNodeObj(self):
+                return isinstance(self.elm, expparser.Ast.Object) or self.organized
 
         @staticmethod
-        def OptionalFunc(defaultParam: list, func: typing.Callable):
-            def newFunc(*param):
-                newParam = [a or d for a, d in zip(param, defaultParam)]
-                if len(param) < len(defaultParam):
-                    newParam.extend(defaultParam[len(param) :])
-                expparser.Utils.NonOptional.checkParamListIfNonOptional(newParam)
-                return func(*newParam)
+        def reorganize_operator_sort(
+            obj_opr_list: list[expparser._FlatOperatorOrganizer.Ir],
+            pos: int = 0,
+            until_opr_level: int = -1,
+        ):
+            state = expparser._FlatOperatorOrganizer.State.BinaryOprWait1stObj
+            children_list: list[expparser.Ast.Element] = []
+            beg = pos
 
-            return newFunc
+            def cleanup_children_as_binary():
+                if state == expparser._FlatOperatorOrganizer.State.BinaryOprWaitNextOpr:
+                    opr1st = children_list[-2]
+                    opr1st: expparser.Ast.Operator
+                    opr1st.operands = [children_list[-3], children_list[-1]]
+                    children_list[-3:] = [opr1st]
 
-    BasicFunctionLib = {
+            def cleanup_children_as_call():
+                nonlocal children_list
+                for c in range(1, len(children_list)):
+                    caller = children_list[c - 1]
+                    arg = children_list[c]
+                    assert isinstance(arg, expparser.Ast.ArgumentTuple)
+                    opr_call = expparser.Ast.Operator(
+                        val=expparser._OprType.CALL, sec=None, operands=[caller, arg]
+                    )
+                    children_list[c] = opr_call
+                children_list = [children_list[-1]]
+
+            def cleanup_children_as_unary():
+                nonlocal children_list
+                for i in range(len(children_list) - 1, 0, -1):
+                    opr = children_list[i - 1]
+                    assert isinstance(opr, expparser.Ast.Operator)
+                    opr.operands = [children_list[i]]
+                children_list = [children_list[0]]
+
+            while True:
+                cur_ir_node = cur_elm = None
+                if pos < len(obj_opr_list):
+                    cur_ir_node = obj_opr_list[pos]
+                    cur_elm = cur_ir_node.elm
+                match state:
+                    case (
+                        expparser._FlatOperatorOrganizer.State.BinaryOprWait1stObj
+                        | expparser._FlatOperatorOrganizer.State.BinaryOprWait2ndObj
+                    ):
+                        if cur_ir_node is None:
+                            raise ValueError()
+                        elif cur_ir_node.IsCurNodeObj():
+                            children_list.append(cur_elm)
+                            if (
+                                state
+                                == expparser._FlatOperatorOrganizer.State.BinaryOprWait1stObj
+                            ):
+                                state = (
+                                    expparser._FlatOperatorOrganizer.State.BinaryOprWaitOpr
+                                )
+                            elif (
+                                state
+                                == expparser._FlatOperatorOrganizer.State.BinaryOprWait2ndObj
+                            ):
+                                state = (
+                                    expparser._FlatOperatorOrganizer.State.BinaryOprWaitNextOpr
+                                )
+                            pos += 1
+                        elif cur_ir_node.IsCurNodeOpr():
+                            # unary
+                            if (
+                                cur_elm.val == expparser._OprType.SUB
+                            ):  # manual transfering
+                                cur_elm.val = expparser._OprType.NEG
+                            cur_opr_pri = cur_elm.val.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    obj_opr_list, pos, cur_opr_pri
+                                )
+                                children_list.append(child)
+                                pos += 1
+                                if (
+                                    state
+                                    == expparser._FlatOperatorOrganizer.State.BinaryOprWait1stObj
+                                ):
+                                    state = (
+                                        expparser._FlatOperatorOrganizer.State.BinaryOprWaitOpr
+                                    )
+                                elif (
+                                    state
+                                    == expparser._FlatOperatorOrganizer.State.BinaryOprWait2ndObj
+                                ):
+                                    state = (
+                                        expparser._FlatOperatorOrganizer.State.BinaryOprWaitNextOpr
+                                    )
+                            elif cur_opr_pri == until_opr_level:
+                                if (
+                                    state
+                                    == expparser._FlatOperatorOrganizer.State.BinaryOprWait1stObj
+                                ):
+                                    state = (
+                                        expparser._FlatOperatorOrganizer.State.ReadUnaryOpr
+                                    )
+                                else:
+                                    raise ValueError()
+                            elif cur_opr_pri < until_opr_level:
+                                raise ValueError("not possible")
+                        else:
+                            raise ValueError()
+                    case (
+                        expparser._FlatOperatorOrganizer.State.BinaryOprWaitOpr
+                        | expparser._FlatOperatorOrganizer.State.BinaryOprWaitNextOpr
+                    ):
+                        if cur_elm is None:
+                            cleanup_children_as_binary()
+                            break
+                        elif isinstance(cur_elm, expparser.Ast.ArgumentTuple):
+                            # call
+                            cur_opr_pri = expparser._OprType.CALL.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    obj_opr_list, pos - 1, cur_opr_pri
+                                )
+                                children_list[-1] = child
+                                state = state
+                            elif cur_opr_pri == until_opr_level:
+                                if (
+                                    state
+                                    == expparser._FlatOperatorOrganizer.State.BinaryOprWaitOpr
+                                ):
+                                    state = (
+                                        expparser._FlatOperatorOrganizer.State.CallReadArg
+                                    )
+                                else:
+                                    raise ValueError()
+                            elif cur_opr_pri < until_opr_level:
+                                raise ValueError("not possible")
+                        elif cur_ir_node.IsCurNodeOpr():
+                            cur_elm: expparser.Ast.Operator
+                            cur_opr_pri = cur_elm.val.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    obj_opr_list, pos - 1, cur_opr_pri
+                                )
+                                children_list[-1] = child
+                                state = state
+                            elif cur_opr_pri == until_opr_level:
+                                cleanup_children_as_binary()
+                                children_list.append(cur_elm)
+                                pos += 1
+                                state = (
+                                    expparser._FlatOperatorOrganizer.State.BinaryOprWait2ndObj
+                                )
+                            elif cur_opr_pri < until_opr_level:
+                                if (
+                                    state
+                                    == expparser._FlatOperatorOrganizer.State.BinaryOprWaitNextOpr
+                                ):
+                                    cleanup_children_as_binary()
+                                    break
+                                else:
+                                    raise ValueError()
+                        else:
+                            raise ValueError()
+                    case expparser._FlatOperatorOrganizer.State.CallReadArg:
+                        if cur_elm is None:
+                            cleanup_children_as_call()
+                            break
+                        elif isinstance(cur_elm, expparser.Ast.ArgumentTuple):
+                            children_list.append(cur_elm)
+                            pos += 1
+                            state = state
+                        elif cur_ir_node.IsCurNodeOpr():
+                            cur_elm: expparser.Ast.Operator
+                            cur_opr_pri = cur_elm.val.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                raise ValueError("not possible")
+                            elif cur_opr_pri == until_opr_level:
+                                children_list.append(cur_elm)
+                            elif cur_opr_pri < until_opr_level:
+                                cleanup_children_as_call()
+                                break
+                    case expparser._FlatOperatorOrganizer.State.ReadUnaryOpr:
+                        if cur_elm is None:
+                            raise ValueError()
+                        elif cur_ir_node.IsCurNodeObj():
+                            children_list.append(cur_elm)
+                            state = (
+                                expparser._FlatOperatorOrganizer.State.GotTargetOfUnaryWaitingBreak
+                            )
+                            pos += 1
+                        elif cur_ir_node.IsCurNodeOpr():
+                            if (
+                                cur_elm.val == expparser._OprType.SUB
+                            ):  # manual transfering
+                                cur_elm.val = expparser._OprType.NEG
+                            cur_opr_pri = cur_elm.val.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    obj_opr_list, pos, cur_opr_pri
+                                )
+                                children_list.append(child)
+                                state = (
+                                    expparser._FlatOperatorOrganizer.State.ReadUnaryOpr
+                                )
+                                pos += 1
+                            elif cur_opr_pri == until_opr_level:
+                                children_list.append(cur_elm)
+                                state = (
+                                    expparser._FlatOperatorOrganizer.State.ReadUnaryOpr
+                                )
+                                pos += 1
+                            elif cur_opr_pri < until_opr_level:
+                                raise ValueError()
+                        else:
+                            raise ValueError()
+                    case (
+                        expparser._FlatOperatorOrganizer.State.GotTargetOfUnaryWaitingBreak
+                    ):
+                        if cur_elm is None:
+                            cleanup_children_as_unary()
+                            break
+                        elif isinstance(cur_elm, expparser.Ast.ArgumentTuple):
+                            cur_opr_pri = expparser._OprType.CALL.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    obj_opr_list, pos - 1, cur_opr_pri
+                                )
+                                children_list[-1] = child
+                                state = state
+                            else:
+                                raise ValueError("not possible")
+                        elif cur_ir_node.IsCurNodeOpr():
+                            cur_opr_pri = cur_elm.val.getPriority()
+                            if cur_opr_pri > until_opr_level:
+                                child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    obj_opr_list, pos - 1, cur_opr_pri
+                                )
+                                children_list[-1] = child
+                            elif cur_opr_pri < until_opr_level:
+                                cleanup_children_as_unary()
+                                break
+                            else:
+                                raise ValueError()
+                        else:
+                            raise ValueError()
+            ret = children_list[0]
+            obj_opr_list[beg:pos] = [
+                expparser._FlatOperatorOrganizer.Ir(ret, organized=True)
+            ]
+            return ret
+
+    @staticmethod
+    def read_recursively(
+        s: str, start_pos: int, ending: set[expparser._TokenType]
+    ) -> expparser._ReadEndState:
+        obj_opr_list: list[expparser.Ast.Element] = []
+        state = expparser._FSMGraphNode.start
+        ptk = FSMUtil.PeekableLazyTokenizer(s, expparser.matchers, start_pos)
+        while True:
+            match state:
+                case expparser._FSMGraphNode.start:
+                    token = ptk.next()
+                    match token.type:
+                        case (
+                            expparser._TokenType.IDENTIFIER
+                            | expparser._TokenType.LITERAL
+                        ):
+                            sec = Section(token.start, token.end)
+                            if token.type == expparser._TokenType.IDENTIFIER:
+                                obj = expparser.Ast.Identifier(
+                                    val=token.value,
+                                    sec=sec,
+                                )
+                            else:
+                                obj = expparser.Ast.Literal.of_str_literal(
+                                    str_lit=token.value, sec=sec
+                                )
+                            obj_opr_list.append(obj)
+                            state = expparser._FSMGraphNode.got_obj
+                        case expparser._TokenType.BRA:
+                            obj = expparser.read_recursively(
+                                s, token.end, ending={expparser._TokenType.KET}
+                            ).result
+                            obj_opr_list.append(obj)
+                            ptk.seek(token.end)
+                            state = expparser._FSMGraphNode.got_obj
+                        case expparser._TokenType.OPR:
+                            sec = Section(token.start, token.end)
+                            obj_opr_list.append(
+                                expparser.Ast.Operator(
+                                    val=expparser._OprType.fromStr(token.value),
+                                    sec=sec,
+                                    operands=None,
+                                )
+                            )
+                            state = expparser._FSMGraphNode.start
+                        case expparser._TokenType.COMMENT | expparser._TokenType.SPACE:
+                            pass
+                        case _:
+                            token.Unexpected()
+                case expparser._FSMGraphNode.got_obj:
+                    token = ptk.next()
+                    match token.type:
+                        case expparser._TokenType.BRA:
+                            obj: list[expparser.Ast.Element] = []
+                            pos = token.end
+                            while True:
+                                end_state: expparser._ReadEndState = (
+                                    expparser.read_recursively(
+                                        s,
+                                        pos,
+                                        ending={
+                                            expparser._TokenType.KET,
+                                            expparser._TokenType.COMMA,
+                                        },
+                                    )
+                                )
+                                obj.append(end_state.result)
+                                if end_state.ended_by.type == expparser._TokenType.KET:
+                                    break
+                                pos = end_state.ended_by.end
+                            obj_opr_list.append(
+                                expparser.Ast.ArgumentTuple(
+                                    val=obj,
+                                    sec=None,
+                                    # (
+                                    #     Section(start=obj[0].sec.start, end=obj[-1].sec.end)
+                                    #     if obj
+                                    #     else Section(pos, pos)
+                                    # ),
+                                )
+                            )
+                            ptk.seek(end_state.ended_by.end)
+                            state = expparser._FSMGraphNode.got_obj
+                        case expparser._TokenType.OPR:
+                            obj_opr_list.append(
+                                expparser.Ast.Operator(
+                                    val=expparser._OprType.fromStr(token.value),
+                                    sec=sec,
+                                    operands=None,
+                                )
+                            )
+                            state = expparser._FSMGraphNode.start
+                        case (
+                            expparser._TokenType.EOF
+                            | expparser._TokenType.KET
+                            | expparser._TokenType.COMMA
+                        ):
+                            if token.type in ending:
+                                elm = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
+                                    expparser._FlatOperatorOrganizer.Ir.lof(
+                                        obj_opr_list
+                                    ),
+                                    pos=0,
+                                )
+                                return expparser._ReadEndState(
+                                    result=elm, ended_by=token
+                                )
+                            else:
+                                token.Unexpected()
+                        case expparser._TokenType.COMMENT | expparser._TokenType.SPACE:
+                            pass
+                        case _:
+                            token.Unexpected()
+
+    @staticmethod
+    def compile(s: str) -> expparser.Ast.Element:
+        return expparser.read_recursively(
+            s, 0, ending={expparser._TokenType.EOF}
+        ).result
+
+    BasicConstantLib = {
+        "e": math.e,
+        "pi": math.pi,
+        "true": True,
+        "false": False,
+        "none": None,
         "sin": math.sin,
         "cos": math.cos,
         "tan": math.tan,
@@ -797,26 +652,18 @@ class expparser:
         "floor": math.floor,
         "ceil": math.ceil,
         "neg": lambda x: -x,
-        "iif": lambda cond, x, y: (
-            x if expparser._NumLikeUnionUtil.ToBool(cond) else y
-        ),
-        "eq": lambda x, y, ep=0.001: abs(x - y) < ep,
-        "StrEq": lambda x, y: x == y,
-        "CStr": str,
-        "CNum": float,
-        "CBool": bool,
-        "CList": CList,
+        "iif": lambda cond, x, y: (x if cond else y),
+        "eq": lambda x, y, eps=1e-3: abs(x - y) < eps,
+        "strcmp": lambda x, y: x == y,
+        "cstr": str,
+        "cnum": float,
+        "cbool": bool,
+        "list": lambda *args: list(args),
         "clip": lambda x, mini, maxi: max(mini, min(x, maxi)),
-        "relerr": lambda a, b: abs(a - b) / (a + expparser. EPS),
+        "relerr": lambda a, b, eps=1e-10: abs(a - b) / (a + eps),
+        "vecadd": lambda a, b: [x + y for x, y in zip(a, b)],
     }
 
-    BasicConstantLib = {
-        "e": math.e,
-        "pi": math.pi,
-        "true": True,
-        "false": False,
-        "none": None,
-    }
 
 class WrltDiscussLikeParser:
     indentedLineRegex = r"^(?<ind>\t*)(?<content>[^\n]*)\n?"
@@ -883,6 +730,7 @@ class WrltDiscussLikeParser:
                         case self._TokenType.unexpected:
                             raise Exception("unexpected token")
         return ast
+
 
 def mlambda(s: str) -> typing.Callable:
     exp = regex.compile(

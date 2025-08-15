@@ -85,9 +85,6 @@ class FSMUtil:
                 s[self.end : lineEnd],
             )
 
-        def toSection(self):
-            return Section(self.start, self.end)
-
     @dataclasses.dataclass
     class GetTokenParam:
         # for rich function support of getToken()
@@ -148,7 +145,7 @@ class FSMUtil:
                     self.pltk = parent.pltk
                     self.pos = parent.pos
                 elif isinstance(parent, FSMUtil.PeekableLazyTokenizer):
-                    self._init(parent._it)
+                    self._init(parent.it)
 
             def next(self):
                 ret = self.pltk.getByTokenAbsIndex(self.pos)
@@ -167,7 +164,7 @@ class FSMUtil:
         matchers: list["FSMUtil.TokenMatcher"]
         _tokenList: list["FSMUtil.Token"]
         _indexTextTokenizing: int
-        _it: Iterator
+        it: Iterator
 
         def __init__(
             self,
@@ -177,11 +174,14 @@ class FSMUtil:
         ):
             self.s = s
             self.matchers = matchers
+            self.seek(start)
+
+        def seek(self, pos: int):
+            self._indexTextTokenizing = pos
             self._tokenList = list()
-            self._indexTextTokenizing = start
-            self._it = self.Iterator(None)
-            self._it.pltk = self
-            self._it.pos = 0
+            self.it = self.Iterator(None)
+            self.it.pltk = self
+            self.it.pos = 0
 
         def _tokenizeNext(self):
             token = FSMUtil.getToken(self.s, self._indexTextTokenizing, self.matchers)
@@ -195,10 +195,10 @@ class FSMUtil:
                 self._tokenizeNext()
 
         def next(self):
-            return self._it.next()
+            return self.it.next()
 
         def movPrev(self):
-            return self._it.movPrev()
+            return self.it.movPrev()
 
 
 class UrlFullResolution(LazyLoading):
