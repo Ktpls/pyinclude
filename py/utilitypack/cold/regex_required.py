@@ -218,7 +218,7 @@ class expparser:
 
     @dataclasses.dataclass
     class _ReadEndState:
-        result: expparser.Ast.Element
+        result: expparser._FlatOperatorOrganizer.Ir
         ended_by: FSMUtil.Token
 
     class _FlatOperatorOrganizer:
@@ -264,7 +264,7 @@ class expparser:
             obj_opr_list: list[expparser._FlatOperatorOrganizer.Ir],
             pos: int = 0,
             until_opr_level: int = -1,
-        ):
+        ) -> expparser._FlatOperatorOrganizer.Ir:
             state = expparser._FlatOperatorOrganizer.State.BinaryOprWait1stObj
             children_list: list[expparser.Ast.Element] = []
             beg = pos
@@ -335,7 +335,7 @@ class expparser:
                             if cur_opr_pri > until_opr_level:
                                 child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
                                     obj_opr_list, pos, cur_opr_pri
-                                )
+                                ).elm
                                 children_list.append(child)
                                 pos += 1
                                 if (
@@ -379,7 +379,7 @@ class expparser:
                             if cur_opr_pri > until_opr_level:
                                 child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
                                     obj_opr_list, pos - 1, cur_opr_pri
-                                )
+                                ).elm
                                 children_list[-1] = child
                                 state = state
                             elif cur_opr_pri == until_opr_level:
@@ -400,7 +400,7 @@ class expparser:
                             if cur_opr_pri > until_opr_level:
                                 child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
                                     obj_opr_list, pos - 1, cur_opr_pri
-                                )
+                                ).elm
                                 children_list[-1] = child
                                 state = state
                             elif cur_opr_pri == until_opr_level:
@@ -457,7 +457,7 @@ class expparser:
                             if cur_opr_pri > until_opr_level:
                                 child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
                                     obj_opr_list, pos, cur_opr_pri
-                                )
+                                ).elm
                                 children_list.append(child)
                                 state = (
                                     expparser._FlatOperatorOrganizer.State.ReadUnaryOpr
@@ -484,7 +484,7 @@ class expparser:
                             if cur_opr_pri > until_opr_level:
                                 child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
                                     obj_opr_list, pos - 1, cur_opr_pri
-                                )
+                                ).elm
                                 children_list[-1] = child
                                 state = state
                             else:
@@ -494,7 +494,7 @@ class expparser:
                             if cur_opr_pri > until_opr_level:
                                 child = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
                                     obj_opr_list, pos - 1, cur_opr_pri
-                                )
+                                ).elm
                                 children_list[-1] = child
                             elif cur_opr_pri < until_opr_level:
                                 cleanup_children_as_unary()
@@ -503,17 +503,15 @@ class expparser:
                                 raise ValueError()
                         else:
                             raise ValueError()
-            ret = children_list[0]
-            obj_opr_list[beg:pos] = [
-                expparser._FlatOperatorOrganizer.Ir(ret, organized=True)
-            ]
+            ret = expparser._FlatOperatorOrganizer.Ir(children_list[0], organized=True)
+            obj_opr_list[beg:pos] = [ret]
             return ret
 
     @staticmethod
     def read_recursively(
         s: str, start_pos: int, ending: set[expparser._TokenType]
     ) -> expparser._ReadEndState:
-        obj_opr_list: list[expparser.Ast.Element] = []
+        obj_opr_list: list[expparser._FlatOperatorOrganizer.Ir] = []
         state = expparser._FSMGraphNode.start
         ptk = FSMUtil.PeekableLazyTokenizer(s, expparser.matchers, start_pos)
         while True:
@@ -535,22 +533,27 @@ class expparser:
                                 obj = expparser.Ast.Literal.of_str_literal(
                                     str_lit=token.value, sec=sec
                                 )
-                            obj_opr_list.append(obj)
+                            obj_opr_list.append(
+                                expparser._FlatOperatorOrganizer.Ir(elm=obj)
+                            )
                             state = expparser._FSMGraphNode.got_obj
                         case expparser._TokenType.BRA:
-                            obj = expparser.read_recursively(
+                            endstate = expparser.read_recursively(
                                 s, token.end, ending={expparser._TokenType.KET}
-                            ).result
-                            obj_opr_list.append(obj)
-                            ptk.seek(token.end)
+                            )
+                            obj_opr_list.append(endstate.result)
+                            ptk.seek(endstate.ended_by.end)
                             state = expparser._FSMGraphNode.got_obj
                         case expparser._TokenType.OPR:
                             sec = Section(token.start, token.end)
                             obj_opr_list.append(
-                                expparser.Ast.Operator(
-                                    val=expparser._OprType.fromStr(token.value),
-                                    sec=sec,
-                                    operands=None,
+                                expparser._FlatOperatorOrganizer.Ir(
+                                    elm=expparser.Ast.Operator(
+                                        val=expparser._OprType.fromStr(token.value),
+                                        sec=sec,
+                                        operands=None,
+                                    ),
+                                    organized=False,
                                 )
                             )
                             state = expparser._FSMGraphNode.start
@@ -575,29 +578,33 @@ class expparser:
                                         },
                                     )
                                 )
-                                obj.append(end_state.result)
+                                obj.append(end_state.result.elm)
                                 if end_state.ended_by.type == expparser._TokenType.KET:
                                     break
                                 pos = end_state.ended_by.end
                             obj_opr_list.append(
-                                expparser.Ast.ArgumentTuple(
-                                    val=obj,
-                                    sec=None,
-                                    # (
-                                    #     Section(start=obj[0].sec.start, end=obj[-1].sec.end)
-                                    #     if obj
-                                    #     else Section(pos, pos)
-                                    # ),
+                                expparser._FlatOperatorOrganizer.Ir(
+                                    elm=expparser.Ast.ArgumentTuple(
+                                        val=obj,
+                                        sec=None,
+                                        # (
+                                        #     Section(start=obj[0].sec.start, end=obj[-1].sec.end)
+                                        #     if obj
+                                        #     else Section(pos, pos)
+                                        # ),
+                                    )
                                 )
                             )
                             ptk.seek(end_state.ended_by.end)
                             state = expparser._FSMGraphNode.got_obj
                         case expparser._TokenType.OPR:
                             obj_opr_list.append(
-                                expparser.Ast.Operator(
-                                    val=expparser._OprType.fromStr(token.value),
-                                    sec=sec,
-                                    operands=None,
+                                expparser._FlatOperatorOrganizer.Ir(
+                                    elm=expparser.Ast.Operator(
+                                        val=expparser._OprType.fromStr(token.value),
+                                        sec=sec,
+                                        operands=None,
+                                    )
                                 )
                             )
                             state = expparser._FSMGraphNode.start
@@ -608,9 +615,7 @@ class expparser:
                         ):
                             if token.type in ending:
                                 elm = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
-                                    expparser._FlatOperatorOrganizer.Ir.lof(
-                                        obj_opr_list
-                                    ),
+                                    obj_opr_list,
                                     pos=0,
                                 )
                                 return expparser._ReadEndState(
@@ -627,7 +632,7 @@ class expparser:
     def compile(s: str) -> expparser.Ast.Element:
         return expparser.read_recursively(
             s, 0, ending={expparser._TokenType.EOF}
-        ).result
+        ).result.elm
 
     BasicConstantLib = {
         "e": math.e,

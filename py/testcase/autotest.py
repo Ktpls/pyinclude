@@ -28,13 +28,13 @@ class ExpNodeReorganizationTest(unittest.TestCase):
     ):
         r = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
             expparser._FlatOperatorOrganizer.Ir.lof(l)
-        )
+        ).elm
         self.assertDictEqual(dataclasses.asdict(r), dataclasses.asdict(expected))
 
     def print_reorg_opr_result(self, l: list[expparser.Ast.Element]):
         r = expparser._FlatOperatorOrganizer.reorganize_operator_sort(
             expparser._FlatOperatorOrganizer.Ir.lof(l)
-        )
+        ).elm
         pprint.pp(r)
 
     def test_1p2(self):
@@ -882,21 +882,20 @@ class SyncExecutableTest(unittest.TestCase):
 
         class ScriptTest(SyncExecutable):
             def main(self):
-                self.stage: Stage
-
                 def sleep_specified_time(t):
-                    t0 = self.stage.t
+                    t0 = self.sem.stage.t
                     self.sleep(t)
-                    selfTest.assertTrue(self.stage.t - t0 >= t)
+                    selfTest.assertTrue(self.sem.stage.t - t0 >= t)
 
                 sleep_specified_time(3)
                 sleep_specified_time(5)
                 sleep_specified_time(10)
 
         pool = concurrent.futures.ThreadPoolExecutor()
-        eosm = SyncExecutableManager(pool)
-        stage = SyncExecutableTest._testbed(eosm)
-        script = ScriptTest(stage, eosm).run()
+        stage = SyncExecutableTest._testbed(None)
+        eosm = SyncExecutableManager(pool=pool, stage=stage)
+        stage.eosm = eosm
+        script = ScriptTest(eosm).run()
         while True:
             stage.step(1)
             if script.state == SyncExecutable.STATE.stopped:
@@ -950,12 +949,11 @@ class SyncExecutableTest(unittest.TestCase):
     def test_multiScriptFlow(selfTest):
         production = SyncExecutableTest.ConsumerProducer.Production(0)
         pool = concurrent.futures.ThreadPoolExecutor()
-        eosm = SyncExecutableManager(pool)
-        stage = SyncExecutableTest._testbed(eosm)
-        ms = SyncExecutableTest.ConsumerProducer.MainScript(stage, eosm).run(
-            production, 5
-        )
-        ps = SyncExecutableTest.ConsumerProducer.ProducerScript(stage, eosm).run(
+        stage = SyncExecutableTest._testbed(None)
+        eosm = SyncExecutableManager(pool=pool, stage=stage)
+        stage.eosm = eosm
+        ms = SyncExecutableTest.ConsumerProducer.MainScript(eosm).run(production, 5)
+        ps = SyncExecutableTest.ConsumerProducer.ProducerScript(eosm).run(
             production, ms
         )
         while True:
@@ -968,8 +966,9 @@ class SyncExecutableTest(unittest.TestCase):
 
     def test_LaunchThreadInThread(selfTest):
         pool = concurrent.futures.ThreadPoolExecutor()
-        eosm = SyncExecutableManager(pool)
-        stage = SyncExecutableTest._testbed(eosm)
+        stage = SyncExecutableTest._testbed(eosm=None)
+        eosm = SyncExecutableManager(pool=pool, stage=stage)
+        stage.eosm = eosm
         records = list()
 
         class MainScriptLauchingThreadFromInside(SyncExecutable):
@@ -991,14 +990,14 @@ class SyncExecutableTest(unittest.TestCase):
                             record()
                             selfr.stepOneFrame()
 
-                recorder = RecorderScript(stage, eosm).run()
+                recorder = RecorderScript(eosm).run()
                 for i in range(iteration):
                     value = i
                     self.sleep(1)
                 recorderStopSignal = True
                 self.stepOneFrame()
 
-        ms = MainScriptLauchingThreadFromInside(stage, eosm).run(5)
+        ms = MainScriptLauchingThreadFromInside(eosm).run(5)
         while True:
             stage.step(0.1)
             if ms.state == SyncExecutable.STATE.stopped:

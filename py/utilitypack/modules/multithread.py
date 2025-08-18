@@ -186,12 +186,11 @@ class StoppableThread(StoppableSomewhat):
 
 
 class Stage:
-    def step(self, dt):
-        raise NotImplementedError("")
+    # stage is something with t readable
+    t: float
 
-    @property
-    def t(self):
-        raise NotImplementedError("")
+    def step(self, dt):
+        raise NotImplementedError()
 
 
 class TimeNonconcernedStage(Stage):
@@ -204,10 +203,13 @@ class TimeNonconcernedStage(Stage):
 
 
 class SyncExecutableManager:
-    def __init__(self, pool: concurrent.futures.ThreadPoolExecutor) -> None:
+    def __init__(
+        self, pool: concurrent.futures.ThreadPoolExecutor, stage: Stage
+    ) -> None:
         self.pool = pool
         self.selist: list[SyncExecutable] = []
         self.executionLock = threading.RLock()
+        self.stage = stage
 
     def _GiveExecutionPrivilegeToSe(self, se: "SyncExecutable"):
         # consider wait asyncly here and below
@@ -239,16 +241,12 @@ class SyncExecutableManager:
 
 class SyncExecutable:
     # for impl serialized but sync mechanization in async foo
-    # stage is something with t readable
     class STATE(enum.Enum):
         stopped = 0
         running = 1
         waitingCondition = 2
 
-    def __init__(
-        self, stage: Stage, sem: SyncExecutableManager, raiseOnErr=True
-    ) -> None:
-        self.stage = stage
+    def __init__(self, sem: SyncExecutableManager, raiseOnErr=True) -> None:
         self.sem = sem
         self.cond = threading.Condition(sem.executionLock)
         self.state = self.STATE.stopped
@@ -294,10 +292,10 @@ class SyncExecutable:
 
     # available in main
     def sleepUntil(self, untilWhat, timeout=None):
-        overduetime = self.stage.t + timeout if timeout else None
+        overduetime = self.sem.stage.t + timeout if timeout else None
 
         def untilWhatOrTimeOut():
-            return untilWhat() or (overduetime and self.stage.t >= overduetime)
+            return untilWhat() or (overduetime and self.sem.stage.t >= overduetime)
 
         self.waitCondition = untilWhatOrTimeOut
         self.state = self.STATE.waitingCondition
@@ -406,7 +404,7 @@ class ThreadLocalSingleton:
 
     @classmethod
     @EasyWrapper
-    def WithMe(f:typing.Callable, cls: ThreadLocalSingleton):
+    def WithMe(f: typing.Callable, cls: ThreadLocalSingleton):
         @functools.wraps(f)
         def f2(*a, **kw):
             if not (
