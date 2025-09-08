@@ -363,7 +363,7 @@ class ExpParseTest(unittest.TestCase):
         self.assertAlmostEqual(self.expparseWithEnv(r"--1"), 1)
 
     def test_cstr(self):
-        self.assertEqual(self.expparseWithEnv("cstr(1)"), "1.0")
+        self.assertEqual(self.expparseWithEnv("str(1)"), "1.0")
 
     def test_array(self):
         self.assertEqual(self.expparseWithEnv(r"list(1,2,3)"), [1.0, 2.0, 3.0])
@@ -395,23 +395,23 @@ class ExpParseTest(unittest.TestCase):
         self.assertListEqual(self.expparseWithEnv(r"list(1)"), [1.0])
 
     def test_cbool(self):
-        self.assertEqual(self.expparseWithEnv(r"cbool(1)"), True)
+        self.assertEqual(self.expparseWithEnv(r"bool(1)"), True)
 
     def test_cbool2(self):
-        self.assertEqual(self.expparseWithEnv(r"cbool(0)"), False)
+        self.assertEqual(self.expparseWithEnv(r"bool(0)"), False)
 
     def test_strcmp(self):
-        self.assertEqual(self.expparseWithEnv(r'strcmp(cstr(1),"1.0")'), True)
+        self.assertEqual(self.expparseWithEnv(r'strcmp(str(1),"1.0")'), True)
 
     def test_cnum_from_str(self):
-        self.assertAlmostEqual(self.expparseWithEnv(r'cnum("1.23")'), 1.23)
+        self.assertAlmostEqual(self.expparseWithEnv(r'num("1.23")'), 1.23)
 
     def test_cnum_from_bool(self):
-        self.assertEqual(self.expparseWithEnv(r"cnum(true)"), 1.0)
+        self.assertEqual(self.expparseWithEnv(r"num(true)"), 1.0)
 
     def test_unmatched_ket(self):
         with self.assertRaises(Exception):
-            self.expparseWithEnv(r"cbool(0))))))))")
+            self.expparseWithEnv(r"bool(0))))))))")
 
     def test_space(self):
         self.assertListEqual(
@@ -1329,5 +1329,4 @@ class ThreadContextTest(unittest.TestCase):
         t.join()
 
 
-# ThreadContextTest().test_with_me_method_decorator()
 unittest.main()

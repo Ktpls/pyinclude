@@ -87,7 +87,7 @@ class expparser:
                 "*": expparser._OprType.MUL,
                 "/": expparser._OprType.DIV,
                 "^": expparser._OprType.POW,
-                "=": expparser._OprType.EQ,
+                "==": expparser._OprType.EQ,
                 "!=": expparser._OprType.NEQ,
                 ">": expparser._OprType.GT,
                 ">=": expparser._OprType.GE,
@@ -150,7 +150,7 @@ class expparser:
             exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=_TokenType.OPR
         ),  # two width operator, match before single widthed ones to get priority
         FSMUtil.RegexpTokenMatcher(
-            exp=r"^[*/+\-^=<>&|]", type=_TokenType.OPR
+            exp=r"^[*/+\-^=<>&|!]", type=_TokenType.OPR
         ),  # single width operator
         FSMUtil.RegexpTokenMatcher(
             exp="^" + regex_num,
@@ -660,9 +660,9 @@ class expparser:
         "iif": lambda cond, x, y: (x if cond else y),
         "eq": lambda x, y, eps=1e-3: abs(x - y) < eps,
         "strcmp": lambda x, y: x == y,
-        "cstr": str,
-        "cnum": float,
-        "cbool": bool,
+        "str": str,
+        "num": float,
+        "bool": bool,
         "list": lambda *args: list(args),
         "clip": lambda x, mini, maxi: max(mini, min(x, maxi)),
         "relerr": lambda a, b, eps=1e-10: abs(a - b) / (a + eps),

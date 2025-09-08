@@ -190,15 +190,18 @@ class DockerBuilder:
                 p, extName = p
             else:
                 extName = os.path.splitext(p)[1][1:].lower()
-            assert extName in front_end_mapping
-            pd_cwd = UrlFullResolution.of(p).folder
-            pde = PowerDefineEnviroment(env=pdenv, cwd=pd_cwd)
-            pdbp = PowerDefineBlockParser(pde)
-            fe = front_end_mapping[extName](pdbp)
-            s = ReadTextFile(p)
-            s = fe.preproc(s)
-            WriteTextFile(p, s)
-            print(f"File edited: {p}")
+            try:
+                assert extName in front_end_mapping
+                pd_cwd = UrlFullResolution.of(p).folder
+                pde = PowerDefineEnviroment(env=pdenv, cwd=pd_cwd)
+                pdbp = PowerDefineBlockParser(pde)
+                fe = front_end_mapping[extName](pdbp)
+                s = ReadTextFile(p)
+                s = fe.preproc(s)
+                WriteTextFile(p, s)
+                print(f"File edited: {p}")
+            except Exception as e:
+                raise Exception(f"Preproc file failed: {p}") from e
         return self
 
     def DistillUtils(
@@ -246,3 +249,10 @@ def ExportDotEnvToDockerCompose(env_file: str, indent: str = "") -> str:
         .collect(lambda x: "\n".join(x))
     )
     return r
+
+
+common_pdutil = {
+    "ExportDotEnvToDockerCompose": ExportDotEnvToDockerCompose,
+    "ReadTextFile": ReadTextFile,
+    "WriteTextFile": WriteTextFile,
+}

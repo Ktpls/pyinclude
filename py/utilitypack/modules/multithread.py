@@ -376,7 +376,7 @@ class ThreadLocalSingleton:
     def summon(cls) -> typing.Self:
         """线程局部实例获取方法"""
         if not cls.__thread_local_singleton_test_val__():
-            cls.__thread_local_singleton_set_val__(cls())
+            cls.__thread_local_singleton_create_instance__()
         return cls.__thread_local_singleton_get_val__()
 
     @classmethod
@@ -410,7 +410,7 @@ class ThreadLocalSingleton:
             if not (
                 built_before_this_frame := cls.__thread_local_singleton_test_val__()
             ):
-                cls.__thread_local_singleton_set_val__(cls())
+                cls.__thread_local_singleton_create_instance__()
             try:
                 return f(*a, **kw)
             except Exception as e:
