@@ -420,3 +420,75 @@ class ThreadLocalSingleton:
                     cls.__thread_local_singleton_release__()
 
         return f2
+
+
+class ReadWriteLock:
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._readers = 0  # 当前活跃读线程数
+        self._writers = 0  # 当前活跃写线程数（0或1）
+        self._pending_writers = 0  # 等待中的写线程数（用于避免写饥饿）
+
+    def acquire_read(self):
+        """获取读锁"""
+        with self._condition:
+            # 如果有写者正在写或有写者在等待，则等待（避免写饥饿）
+            while self._writers > 0 or self._pending_writers > 0:
+                self._condition.wait()
+            self._readers += 1
+
+    def release_read(self):
+        """释放读锁"""
+        with self._condition:
+            self._readers -= 1
+            if self._readers == 0:
+                # 如果没有读者了，唤醒一个等待的写者（如果有）
+                self._condition.notify_all()  # 或 notify() 也可以，但 notify_all 更安全
+
+    def acquire_write(self):
+        """获取写锁"""
+        with self._condition:
+            self._pending_writers += 1  # 增加等待写者计数
+            try:
+                # 等待直到没有读者和写者
+                while self._readers > 0 or self._writers > 0:
+                    self._condition.wait()
+                self._writers = 1  # 标记写者进入
+            finally:
+                self._pending_writers -= 1  # 无论成功与否，减少等待计数
+
+    def release_write(self):
+        """释放写锁"""
+        with self._condition:
+            self._writers = 0
+            self._condition.notify_all()  # 唤醒所有等待的读者和写者
+
+    # 辅助类：支持 with 语句
+    class ReadLock:
+        def __init__(self, rwlock: ReadWriteLock):
+            self.rwlock = rwlock
+
+        def __enter__(self):
+            self.rwlock.acquire_read()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.rwlock.release_read()
+
+    class WriteLock:
+        def __init__(self, rwlock: ReadWriteLock):
+            self.rwlock = rwlock
+
+        def __enter__(self):
+            self.rwlock.acquire_write()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.rwlock.release_write()
+
+    # 支持 with 语句的上下文管理器（可选，方便使用）
+    def gen_rlock(self):
+        return ReadWriteLock.ReadLock(self)
+
+    def gen_wlock(self):
+        return ReadWriteLock.WriteLock(self)
