@@ -439,8 +439,8 @@ class CvUnicodePathUtil:
 
 class AffineMats:
     dtype = np.float32
-    zoom = lambda rate: np.array(
-        [[rate, 0, 0], [0, rate, 0], [0, 0, 1]],
+    zoom = lambda ratex, ratey=None: np.array(
+        [[ratex, 0, 0], [0, (ratey if ratey is not None else ratex), 0], [0, 0, 1]],
         dtype=AffineMats.dtype,
     )
     shift = lambda x, y: np.array(
@@ -479,6 +479,56 @@ class AffineMats:
     #             for i in range(len(v.shape))
     #         ]
     #         return v[*slce]
+
+
+class PasteImgToImg:
+    # just like bitblt
+    def __new__(
+        _,
+        img_to_paste_to: np.ndarray,
+        img_to_paste: np.ndarray,
+        pos: np.ndarray,
+        blender=None,
+    ):
+        blender = blender or PasteImgToImg.Blenders.copy
+        pos = np.array(pos)
+        pos2 = pos + img_to_paste.shape[:2]
+        # y0 x0 y1 x1
+        clipping = np.array(
+            [
+                *(np.maximum((0, 0), pos) - pos),
+                *(pos2 - np.minimum(img_to_paste_to.shape[:2], pos2)),
+            ]
+        )
+        pos += clipping[:2]
+        hw = np.maximum(img_to_paste.shape[:2] - clipping[:2] - clipping[2:], (0, 0))
+        if (hw > 0).all():
+            old = img_to_paste_to[pos[0] : pos[0] + hw[0], pos[1] : pos[1] + hw[1], ...]
+            new = img_to_paste[
+                clipping[0] : clipping[0] + hw[0],
+                clipping[1] : clipping[1] + hw[1],
+                ...,
+            ]
+
+            img_to_paste_to[pos[0] : pos[0] + hw[0], pos[1] : pos[1] + hw[1], ...] = (
+                blender(old, new)
+            )
+        return img_to_paste_to
+
+    class Blenders:
+        @staticmethod
+        def copy(img_existed: np.ndarray, img_new: np.ndarray):
+            return img_new
+
+        @staticmethod
+        def alpha(ratio: float):
+            return lambda img_existed, img_new: img_new * ratio + img_existed * (
+                1 - ratio
+            )
+
+        @staticmethod
+        def add(img_existed: np.ndarray, img_new: np.ndarray):
+            return img_existed + img_new
 
 
 try:

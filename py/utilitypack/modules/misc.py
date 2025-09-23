@@ -942,7 +942,7 @@ class Stream[T](typing.Iterable[T]):
 
         @staticmethod
         @EasyWrapper
-        def _OneByOneCollector[R](
+        def OneByOneCollector[R](
             func: typing.Callable[[R, T], R],
             initial: R = None,
             initial_func: typing.Optional[typing.Callable[[], R]] = None,
@@ -1008,7 +1008,7 @@ class Stream[T](typing.Iterable[T]):
 
         @staticmethod
         def stringIo() -> typing.Callable[[typing.Iterable[str]], io.StringIO]:
-            @Stream.Collectors._OneByOneCollector(initial_func=io.StringIO)
+            @Stream.Collectors.OneByOneCollector(initial_func=io.StringIO)
             def collector(buf: io.StringIO, x: str):
                 buf.write(x)
                 return buf
@@ -1017,7 +1017,7 @@ class Stream[T](typing.Iterable[T]):
 
         @staticmethod
         def print(*a, **kw) -> typing.Callable[[typing.Iterable[str]], None]:
-            @Stream.Collectors._OneByOneCollector()
+            @Stream.Collectors.OneByOneCollector()
             def collector(buf: None, x: str):
                 print(x, *a, **kw)
 
@@ -1723,11 +1723,13 @@ class GSLogger:
         return f2
 
 
-def SuccessOrNone[R](f: typing.Callable[[], R]) -> typing.Optional[R]:
+def SuccessOrNone[R](
+    f: typing.Callable[[], R], retOnFailure=None
+) -> typing.Optional[R]:
     try:
         return f()
     except:
-        return None
+        return retOnFailure
 
 
 class CommitUnpressureizer:

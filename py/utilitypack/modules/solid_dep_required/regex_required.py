@@ -32,10 +32,10 @@ class FSMUtil:
             match = regex.match(self.exp, s[i:])
             if match is not None:
                 return FSMUtil.Token(
-                    self.type,
-                    match.group(0),
-                    i,
-                    i + len(match.group(0)),
+                    type=self.type,
+                    value=match.group(0),
+                    start=i,
+                    end=i + len(match.group(0)),
                     source=s,
                 )
             return None
@@ -146,6 +146,9 @@ class FSMUtil:
                     self.pos = parent.pos
                 elif isinstance(parent, FSMUtil.PeekableLazyTokenizer):
                     self._init(parent.it)
+
+            def get(self):
+                return self.pltk.getByTokenAbsIndex(self.pos)
 
             def next(self):
                 ret = self.pltk.getByTokenAbsIndex(self.pos)

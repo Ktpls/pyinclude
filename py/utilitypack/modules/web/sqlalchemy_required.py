@@ -11,10 +11,11 @@ class DbConnectionManager:
     def connect(self, url, **kw):
         self.engine = sqlalchemy.create_engine(url=url, **kw)
         self.SessionMaker = sqlalchemy.orm.sessionmaker(bind=self.engine)
+        self.init_sa_db(self.engine)
         return self.SessionMaker
 
-    def init_sa_db(self):
-        self.DbBase.metadata.create_all(self.engine)
+    def init_sa_db(self, engine: sqlalchemy.Engine):
+        self.DbBase.metadata.create_all(engine)
 
 
 class DbEntityBaseMixin:

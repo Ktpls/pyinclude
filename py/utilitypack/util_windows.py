@@ -153,7 +153,7 @@ class fullScrHUD:
 
     @dataclasses.dataclass
     class Region:
-        lt: typing.List[int]
+        lt: list[int]
         content: np.ndarray = None
 
         def update_content(self):
