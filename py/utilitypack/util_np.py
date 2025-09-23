@@ -170,42 +170,37 @@ def SpatialVectorWithShapeLikeX(x: np.ndarray, axis: int):
 class AutoSizableNdarray:
     data: np.ndarray = None
     alloced_aabb: list = None
-    """
-    def set(self, x, z, value)
-        如果data=aabb=None
-            初始化data为1x1array，aabb=[x,x+1,z,z+1]
-        否则如果xz不在aabb内
-            将data扩展到包含xz范围
-            更新aabb
-        将data[x-aabb[0],z-aabb[2]]设置为value
-    def get(self, x, z)
-        如果xz在aabb内
-            返回data[x-aabb[0],z-aabb[2]]
-        否则
-            返回0
-    """
 
-    def __init__(self):
+    def __init__(self, ndim=2):
+        self.ndim = ndim
         self.data: np.ndarray = None
-        self.alloced_aabb: list = None  # [x_min, x_max, z_min, z_max]
+        self.alloced_aabb: list = None  # [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
         self.used_aabb: list = None
 
-    def _expand_aabb_just_enough(self, x, z, aabb):
-        if x < aabb[0]:
-            aabb[0] = x
-        elif x >= aabb[1]:
-            aabb[1] = x
-        if z < aabb[2]:
-            aabb[2] = z
-        elif z >= aabb[3]:
-            aabb[3] = z
-        return aabb
+    def _expand_aabb_just_enough(self, coords, aabb):
+        """
+        根据坐标扩展aabb刚好够用的空间
+        coords: 坐标元组
+        aabb: [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
+        """
+        new_aabb = aabb.copy()
+        for i, coord in enumerate(coords):
+            min_idx = i * 2
+            max_idx = i * 2 + 1
+            if coord < new_aabb[min_idx]:
+                new_aabb[min_idx] = coord
+            elif coord >= new_aabb[max_idx]:
+                new_aabb[max_idx] = coord + 1
+        return new_aabb
 
-    def _expand_aabb_pow_of_2(self, x, z, aabb):
-        # 计算新的 x 范围
-        current_x_min, current_x_max = aabb[0], aabb[1]
-        current_z_min, current_z_max = aabb[2], aabb[3]
-
+    def _expand_aabb_pow_of_2(self, coords, aabb):
+        """
+        根据坐标扩展aabb到2的幂次大小
+        coords: 坐标元组
+        aabb: [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
+        """
+        new_aabb = aabb.copy()
+        
         def exp2CeilLog2(x: int):
             return int(np.exp2(np.ceil(np.log2(x))))
 
@@ -222,111 +217,172 @@ class AutoSizableNdarray:
                 new_max = current_min + new_size
             return new_min, new_max
 
-        new_x_min, new_x_max = expand_range(current_x_min, current_x_max, x)
-        new_z_min, new_z_max = expand_range(current_z_min, current_z_max, z)
-        return [new_x_min, new_x_max, new_z_min, new_z_max]
+        for i, coord in enumerate(coords):
+            min_idx = i * 2
+            max_idx = i * 2 + 1
+            current_min, current_max = new_aabb[min_idx], new_aabb[max_idx]
+            new_min, new_max = expand_range(current_min, current_max, coord)
+            new_aabb[min_idx], new_aabb[max_idx] = new_min, new_max
+            
+        return new_aabb
 
-    def batch_set(self, xbeg, zbeg, values: np.ndarray):
+    def batch_set(self, coords_beg, values: np.ndarray):
         """
-        在xb:xb+values.shape[0]行，zb:zb+values.shape[1]列，将values赋值给self.data
-        需要将xb和zb依据self.alloced_aabb进行转换
-        如果点xb,zb或xb+values.shape[0],zb:zb+values.shape[1]不在self.alloced_aabb中，则使用_expand_aabb_pow_of_2扩展aabb
+        在指定坐标开始的位置批量设置值
+        coords_beg: 起始坐标元组
+        values: 要设置的值的数组
         """
-        xend = xbeg + values.shape[0]
-        zend = zbeg + values.shape[1]
-        # 如果未初始化，使用 set 方法逐个设置
+        coords_end = [coords_beg[i] + values.shape[i] for i in range(len(coords_beg))]
+        
+        # 如果未初始化，使用 values 初始化数组
         if self.not_inited():
             self.data = np.copy(values)
-            self.alloced_aabb = [xbeg, xend, zbeg, xend]
-            self.used_aabb = [xbeg, xend, zbeg, xend]
-        elif not (self.is_in_aabb(xbeg, zbeg) and self.is_in_aabb(xend, zend)):
-            # 需要扩展
-            # 计算新的 aabb（包括整个 values 区域）
-            new_aabb = self.alloced_aabb
-            if not self.is_in_aabb(xbeg, zbeg, new_aabb):
-                new_aabb = self._expand_aabb_pow_of_2(xbeg, zbeg, new_aabb)
-            if not self.is_in_aabb(xend, zend, new_aabb):
-                new_aabb = self._expand_aabb_pow_of_2(xend, zend, new_aabb)
-            self.resize(new_aabb)
+            self.alloced_aabb = []
+            self.used_aabb = []
+            for i in range(self.ndim):
+                self.alloced_aabb.extend([coords_beg[i], coords_end[i]])
+                self.used_aabb.extend([coords_beg[i], coords_end[i]])
+        else:
+            # 检查是否需要扩展
+            needs_expansion = False
+            temp_aabb = self.alloced_aabb.copy()
+            
+            # 检查起始点
+            if not self.is_in_aabb(coords_beg):
+                needs_expansion = True
+                temp_aabb = self._expand_aabb_pow_of_2(coords_beg, temp_aabb)
+                
+            # 检查结束点
+            if not self.is_in_aabb(coords_end):
+                needs_expansion = True
+                temp_aabb = self._expand_aabb_pow_of_2(coords_end, temp_aabb)
+                
+            if needs_expansion:
+                self.resize(temp_aabb)
 
         # 将 values 数据复制到正确的位置
-        target_xbeg, target_zbeg = self.xz2xzInData(xbeg, zbeg)
-        target_xend, target_zend = self.xz2xzInData(xend, zend)
+        target_beg = self.coords2indices(coords_beg)
+        target_end = self.coords2indices(coords_end)
+        
+        slices = tuple(slice(target_beg[i], target_end[i]) for i in range(len(target_beg)))
+        self.data[slices] = values
 
-        self.data[target_zbeg:target_zend, target_xbeg:target_xend] = values
+        # 更新 used_aabb 以包含新设置的区域
+        self.used_aabb = self._expand_aabb_just_enough(coords_beg, self.used_aabb)
+        self.used_aabb = self._expand_aabb_just_enough(coords_end, self.used_aabb)
 
-        # 更新 used_aabb 以包含新设置的区域=
-        self.used_aabb = self._expand_aabb_just_enough(xbeg, zbeg, self.used_aabb)
-        self.used_aabb = self._expand_aabb_just_enough(xend, zend, self.used_aabb)
-
-    def set(self, x, z, value):
+    def set(self, coords, value):
         """设置指定坐标点的值，自动扩展数组大小"""
+        if not isinstance(coords, (list, tuple)):
+            coords = [coords]
+            
+        coords = list(coords)  # 确保是列表形式
+        
         if self.not_inited():
-            # 初始化 1x1 数组
-            self.data = np.zeros((1, 1), dtype=int)
-            self.alloced_aabb = [x, x + 1, z, z + 1]
-            self.used_aabb = [x, x + 1, z, z + 1]
-        elif not self.is_in_aabb(x, z):
+            # 初始化 1x1x...x1 数组
+            shape = tuple(1 for _ in range(self.ndim))
+            self.data = np.zeros(shape, dtype=type(value) if type(value) != str else object)
+            self.alloced_aabb = []
+            self.used_aabb = []
+            for coord in coords:
+                self.alloced_aabb.extend([coord, coord + 1])
+                self.used_aabb.extend([coord, coord + 1])
+        elif not self.is_in_aabb(coords):
             # 需要扩展数组
-            new_aabb = self._expand_aabb_pow_of_2(x, z, self.alloced_aabb)
+            new_aabb = self._expand_aabb_pow_of_2(coords, self.alloced_aabb)
             self.resize(new_aabb)
-        if not self.is_in_aabb(x, z, self.used_aabb):
-            self.used_aabb = self._expand_aabb_just_enough(x, z, self.used_aabb)
-        self.data[z - self.alloced_aabb[2], x - self.alloced_aabb[0]] = value
+            
+        if not self.is_in_aabb(coords, self.used_aabb):
+            self.used_aabb = self._expand_aabb_just_enough(coords, self.used_aabb)
+            
+        indices = self.coords2indices(coords)
+        self.data[tuple(indices)] = value
 
     def resize(self, new_aabb):
-        current_x_min, current_x_max = self.alloced_aabb[0], self.alloced_aabb[1]
-        current_z_min, current_z_max = self.alloced_aabb[2], self.alloced_aabb[3]
-
-        new_x_min, new_x_max, new_z_min, new_z_max = new_aabb
-
+        """
+        调整数组大小到新的aabb
+        new_aabb: [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
+        """
         # 创建新数组
-        new_shape = (new_z_max - new_z_min, new_x_max - new_x_min)
+        new_shape = tuple(new_aabb[i*2+1] - new_aabb[i*2] for i in range(self.ndim))
         new_data = np.empty(new_shape, dtype=self.data.dtype)
 
         # 计算旧数据在新数组中的位置
-        old_x_start = current_x_min - new_x_min
-        old_z_start = current_z_min - new_z_min
+        old_starts = []
+        for i in range(self.ndim):
+            old_start = self.alloced_aabb[i*2] - new_aabb[i*2]
+            old_starts.append(old_start)
 
         # 复制旧数据到新数组
-        new_data[
-            old_z_start : old_z_start + self.data.shape[0],
-            old_x_start : old_x_start + self.data.shape[1],
-        ] = self.data
+        old_slices = tuple(slice(0, self.data.shape[i]) for i in range(self.ndim))
+        new_slices = tuple(slice(old_starts[i], old_starts[i] + self.data.shape[i]) for i in range(self.ndim))
+        new_data[new_slices] = self.data[old_slices]
 
         # 更新属性
         self.data = new_data
         self.alloced_aabb = new_aabb
 
-    def xz2xzInData(self, x, z):
-        return x - self.alloced_aabb[0], z - self.alloced_aabb[2]
+    def coords2indices(self, coords):
+        """
+        将坐标转换为数组内的索引
+        coords: 坐标元组
+        """
+        return [coords[i] - self.alloced_aabb[i*2] for i in range(len(coords))]
 
-    def get(self, x, z):
+    def get(self, coords):
         """获取指定坐标点的值"""
-        assert not self.not_inited() and self.is_in_aabb(x, z)
-        return self.data[self.xz2xzInData(x, z)]
+        if not isinstance(coords, (list, tuple)):
+            coords = [coords]
+        coords = list(coords)
+        
+        assert not self.not_inited() and self.is_in_aabb(coords)
+        indices = self.coords2indices(coords)
+        return self.data[tuple(indices)]
 
-    def batch_get(self, x, z):
-        """获取指定坐标点的值"""
-        assert self.not_inited() and self.is_in_aabb(x, z)
-        return self.data[self.xz2xzInData(x, z)]
+    def batch_get(self, coords_beg, shape):
+        """批量获取指定坐标开始的值"""
+        coords_end = [coords_beg[i] + shape[i] for i in range(len(coords_beg))]
+        assert not self.not_inited() and self.is_in_aabb(coords_beg) and self.is_in_aabb(coords_end)
+        indices_beg = self.coords2indices(coords_beg)
+        indices_end = self.coords2indices(coords_end)
+        
+        slices = tuple(slice(indices_beg[i], indices_end[i]) for i in range(len(indices_beg)))
+        return self.data[slices]
 
     def not_inited(self):
-        assert (self.alloced_aabb is None) == (
-            self.alloced_aabb is None or self.data is None or self.used_aabb is None
-        )
-        return self.alloced_aabb is None
+        is_none = self.alloced_aabb is None
+        assert is_none == (self.data is None or self.used_aabb is None)
+        return is_none
 
-    def is_in_aabb(self, x, z, aabb=None):
+    def is_in_aabb(self, coords, aabb=None):
+        """
+        检查坐标是否在aabb范围内
+        coords: 坐标元组
+        aabb: [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
+        """
         if self.not_inited():
             return False
         if aabb is None:
             aabb = self.alloced_aabb
-        return aabb[0] <= x < aabb[1] and aabb[2] <= z < aabb[3]
+        if not isinstance(coords, (list, tuple)):
+            coords = [coords]
+            
+        for i, coord in enumerate(coords):
+            min_idx = i * 2
+            max_idx = i * 2 + 1
+            if not (aabb[min_idx] <= coord < aabb[max_idx]):
+                return False
+        return True
 
     def tight_data(self):
-        # not really trimed, just return the tight data slice
+        """返回紧凑的数据切片"""
         assert not self.not_inited()
-        xb, zb = self.xz2xzInData(self.used_aabb[0], self.used_aabb[2])
-        xe, ze = self.xz2xzInData(self.used_aabb[1], self.used_aabb[3])
-        return self.data[zb:ze, xb:xe]
+        indices_beg = self.coords2indices(
+            [self.used_aabb[i*2] for i in range(self.ndim)]
+        )
+        indices_end = self.coords2indices(
+            [self.used_aabb[i*2+1] for i in range(self.ndim)]
+        )
+        
+        slices = tuple(slice(indices_beg[i], indices_end[i]) for i in range(self.ndim))
+        return self.data[slices]
