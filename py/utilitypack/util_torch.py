@@ -5,6 +5,7 @@ import torch
 import platform
 import os
 import random
+from .util_solid import perf_statistic
 
 
 def getTorchDevice():
@@ -308,44 +309,42 @@ import typing
 
 
 class trainpipe:
-    @staticmethod
     def train(
+        self,
         dataloader,
         optimizer,
-        trainmainprogress,
         epochnum=10,
         outputperbatchnum=100,
-        device="cpu",
         customSubOnOutput=None,
     ):
-        epochs = epochnum
         start_time = time.time()
-        for ep in range(epochs):
-            print(f"Epoch {ep}")
+        ps = perf_statistic()
+        for ep in range(epochnum):
+            print(f"Epoch {ep} / {epochnum}")
             print("-------------------------------")
 
             # train
             for batch, datatuple in enumerate(dataloader):
-                loss = trainmainprogress(datatuple)
+                ps.start()
+                loss = self.trainprogress(datatuple)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                ps.stop().countcycle()
                 if batch % outputperbatchnum == 0:
-                    end_time = time.time()
-                    print(f"Batch {batch}/{len(dataloader)}")
-                    print(
-                        f"Training speed: {outputperbatchnum/(end_time-start_time):>5f} batches per second"
-                    )
+                    print(f"Batch {batch} / {len(dataloader)}")
+                    print(f"Training speed: {ps.aveTime():>5f} seconds per batch")
+                    ps.clear()
                     aveloss = loss.item()
                     print(f"Instant loss: {aveloss:>7f}")
-                    if customSubOnOutput is not None:
-                        customSubOnOutput(batch, aveloss)
-                    start_time = time.time()
+                    self.train_progress_echo(batch=batch, loss=aveloss)
 
         # win32api.Beep(1000, 1000)
         print("Done!")
 
     def prepare(self): ...
+
+    def train_progress_echo(self, batch, loss): ...
 
     def calcloss(self, *arg, **kw): ...
 
@@ -386,6 +385,18 @@ class ConvNormInsp(torch.nn.Module):
             x = self.norm(x)
         x = self.insp(x)
         return x
+
+
+class ConvGnRelu(ConvNormInsp):
+    def __init__(self, in_channels, out_channels, numGroup=4, *a, **kw):
+        super().__init__(
+            in_channels,
+            out_channels,
+            norm=torch.nn.GroupNorm(numGroup, out_channels),
+            insp=torch.nn.LeakyReLU(),
+            *a,
+            **kw,
+        )
 
 
 class ConvGnHs(ConvNormInsp):
@@ -476,6 +487,14 @@ def getmodel(model0: torch.nn.Module, *arg, **kwarg):
 
 
 class FinalModule(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.register_buffer("opt_step", torch.tensor(0, dtype=torch.int32))
+        self.opt_step: torch.Tensor
+
+    def update_step(self, delta=1):
+        self.opt_step += delta
+
     def parameters(
         self, recurse: bool = True
     ) -> typing.Iterator[torch.nn.parameter.Parameter]:

@@ -95,15 +95,6 @@ class ZFunc:
             return self.__CallOnNum(x)
 
 
-def randomString(charset, length):
-    return "".join(
-        [
-            charset[i]
-            for i in np.random.choice(range(len(charset)), length, replace=True)
-        ]
-    )
-
-
 def ReLU(x):
     return np.maximum(0, x)
 
@@ -174,7 +165,9 @@ class AutoSizableNdarray:
     def __init__(self, ndim=2):
         self.ndim = ndim
         self.data: np.ndarray = None
-        self.alloced_aabb: list = None  # [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
+        self.alloced_aabb: list = (
+            None  # [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
+        )
         self.used_aabb: list = None
 
     def _expand_aabb_just_enough(self, coords, aabb):
@@ -200,7 +193,7 @@ class AutoSizableNdarray:
         aabb: [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
         """
         new_aabb = aabb.copy()
-        
+
         def exp2CeilLog2(x: int):
             return int(np.exp2(np.ceil(np.log2(x))))
 
@@ -223,7 +216,7 @@ class AutoSizableNdarray:
             current_min, current_max = new_aabb[min_idx], new_aabb[max_idx]
             new_min, new_max = expand_range(current_min, current_max, coord)
             new_aabb[min_idx], new_aabb[max_idx] = new_min, new_max
-            
+
         return new_aabb
 
     def batch_set(self, coords_beg, values: np.ndarray):
@@ -233,7 +226,7 @@ class AutoSizableNdarray:
         values: 要设置的值的数组
         """
         coords_end = [coords_beg[i] + values.shape[i] for i in range(len(coords_beg))]
-        
+
         # 如果未初始化，使用 values 初始化数组
         if self.not_inited():
             self.data = np.copy(values)
@@ -246,25 +239,27 @@ class AutoSizableNdarray:
             # 检查是否需要扩展
             needs_expansion = False
             temp_aabb = self.alloced_aabb.copy()
-            
+
             # 检查起始点
             if not self.is_in_aabb(coords_beg):
                 needs_expansion = True
                 temp_aabb = self._expand_aabb_pow_of_2(coords_beg, temp_aabb)
-                
+
             # 检查结束点
             if not self.is_in_aabb(coords_end):
                 needs_expansion = True
                 temp_aabb = self._expand_aabb_pow_of_2(coords_end, temp_aabb)
-                
+
             if needs_expansion:
                 self.resize(temp_aabb)
 
         # 将 values 数据复制到正确的位置
         target_beg = self.coords2indices(coords_beg)
         target_end = self.coords2indices(coords_end)
-        
-        slices = tuple(slice(target_beg[i], target_end[i]) for i in range(len(target_beg)))
+
+        slices = tuple(
+            slice(target_beg[i], target_end[i]) for i in range(len(target_beg))
+        )
         self.data[slices] = values
 
         # 更新 used_aabb 以包含新设置的区域
@@ -275,13 +270,15 @@ class AutoSizableNdarray:
         """设置指定坐标点的值，自动扩展数组大小"""
         if not isinstance(coords, (list, tuple)):
             coords = [coords]
-            
+
         coords = list(coords)  # 确保是列表形式
-        
+
         if self.not_inited():
             # 初始化 1x1x...x1 数组
             shape = tuple(1 for _ in range(self.ndim))
-            self.data = np.zeros(shape, dtype=type(value) if type(value) != str else object)
+            self.data = np.zeros(
+                shape, dtype=type(value) if type(value) != str else object
+            )
             self.alloced_aabb = []
             self.used_aabb = []
             for coord in coords:
@@ -291,10 +288,10 @@ class AutoSizableNdarray:
             # 需要扩展数组
             new_aabb = self._expand_aabb_pow_of_2(coords, self.alloced_aabb)
             self.resize(new_aabb)
-            
+
         if not self.is_in_aabb(coords, self.used_aabb):
             self.used_aabb = self._expand_aabb_just_enough(coords, self.used_aabb)
-            
+
         indices = self.coords2indices(coords)
         self.data[tuple(indices)] = value
 
@@ -304,18 +301,23 @@ class AutoSizableNdarray:
         new_aabb: [dim0_min, dim0_max, dim1_min, dim1_max, ..., dimN_min, dimN_max]
         """
         # 创建新数组
-        new_shape = tuple(new_aabb[i*2+1] - new_aabb[i*2] for i in range(self.ndim))
+        new_shape = tuple(
+            new_aabb[i * 2 + 1] - new_aabb[i * 2] for i in range(self.ndim)
+        )
         new_data = np.empty(new_shape, dtype=self.data.dtype)
 
         # 计算旧数据在新数组中的位置
         old_starts = []
         for i in range(self.ndim):
-            old_start = self.alloced_aabb[i*2] - new_aabb[i*2]
+            old_start = self.alloced_aabb[i * 2] - new_aabb[i * 2]
             old_starts.append(old_start)
 
         # 复制旧数据到新数组
         old_slices = tuple(slice(0, self.data.shape[i]) for i in range(self.ndim))
-        new_slices = tuple(slice(old_starts[i], old_starts[i] + self.data.shape[i]) for i in range(self.ndim))
+        new_slices = tuple(
+            slice(old_starts[i], old_starts[i] + self.data.shape[i])
+            for i in range(self.ndim)
+        )
         new_data[new_slices] = self.data[old_slices]
 
         # 更新属性
@@ -327,14 +329,14 @@ class AutoSizableNdarray:
         将坐标转换为数组内的索引
         coords: 坐标元组
         """
-        return [coords[i] - self.alloced_aabb[i*2] for i in range(len(coords))]
+        return [coords[i] - self.alloced_aabb[i * 2] for i in range(len(coords))]
 
     def get(self, coords):
         """获取指定坐标点的值"""
         if not isinstance(coords, (list, tuple)):
             coords = [coords]
         coords = list(coords)
-        
+
         assert not self.not_inited() and self.is_in_aabb(coords)
         indices = self.coords2indices(coords)
         return self.data[tuple(indices)]
@@ -342,11 +344,17 @@ class AutoSizableNdarray:
     def batch_get(self, coords_beg, shape):
         """批量获取指定坐标开始的值"""
         coords_end = [coords_beg[i] + shape[i] for i in range(len(coords_beg))]
-        assert not self.not_inited() and self.is_in_aabb(coords_beg) and self.is_in_aabb(coords_end)
+        assert (
+            not self.not_inited()
+            and self.is_in_aabb(coords_beg)
+            and self.is_in_aabb(coords_end)
+        )
         indices_beg = self.coords2indices(coords_beg)
         indices_end = self.coords2indices(coords_end)
-        
-        slices = tuple(slice(indices_beg[i], indices_end[i]) for i in range(len(indices_beg)))
+
+        slices = tuple(
+            slice(indices_beg[i], indices_end[i]) for i in range(len(indices_beg))
+        )
         return self.data[slices]
 
     def not_inited(self):
@@ -366,7 +374,7 @@ class AutoSizableNdarray:
             aabb = self.alloced_aabb
         if not isinstance(coords, (list, tuple)):
             coords = [coords]
-            
+
         for i, coord in enumerate(coords):
             min_idx = i * 2
             max_idx = i * 2 + 1
@@ -378,11 +386,35 @@ class AutoSizableNdarray:
         """返回紧凑的数据切片"""
         assert not self.not_inited()
         indices_beg = self.coords2indices(
-            [self.used_aabb[i*2] for i in range(self.ndim)]
+            [self.used_aabb[i * 2] for i in range(self.ndim)]
         )
         indices_end = self.coords2indices(
-            [self.used_aabb[i*2+1] for i in range(self.ndim)]
+            [self.used_aabb[i * 2 + 1] for i in range(self.ndim)]
         )
-        
+
         slices = tuple(slice(indices_beg[i], indices_end[i]) for i in range(self.ndim))
         return self.data[slices]
+
+
+class AffineMats:
+    dtype = np.float32
+    zoom = lambda ratex, ratey=None: np.array(
+        [[ratex, 0, 0], [0, (ratey if ratey is not None else ratex), 0], [0, 0, 1]],
+        dtype=AffineMats.dtype,
+    )
+    shift = lambda x, y: np.array(
+        [[1, 0, x], [0, 1, y], [0, 0, 1]],
+        dtype=AffineMats.dtype,
+    )
+    flip = lambda lr, ud: np.array(
+        [[lr, 0, 0], [0, ud, 0], [0, 0, 1]],
+        dtype=AffineMats.dtype,
+    )
+    rot = lambda the: np.array(
+        [[np.cos(the), np.sin(the), 0], [-np.sin(the), np.cos(the), 0], [0, 0, 1]],
+        dtype=AffineMats.dtype,
+    )
+    identity = lambda: np.array(
+        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        dtype=AffineMats.dtype,
+    )

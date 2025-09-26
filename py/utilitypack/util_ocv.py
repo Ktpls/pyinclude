@@ -1,5 +1,12 @@
-from .util_solid import FunctionalWrapper, WriteFile, ReadFile, AccessibleQueue, EPS
-from .util_np import randomString
+from .util_solid import (
+    FunctionalWrapper,
+    WriteFile,
+    ReadFile,
+    AccessibleQueue,
+    EPS,
+    RandomString,
+)
+from .util_np import AffineMats
 import numpy as np
 import os
 import dataclasses
@@ -306,8 +313,9 @@ class DataCollector:
 
     @staticmethod
     def geneName():
-        charSet4RandomString = "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        return randomString(charSet4RandomString, DataCollector.randNameLen)
+        return RandomString(
+            DataCollector.randNameLen, RandomString.Charsets.UPPER_DIGIT
+        )
 
     @FunctionalWrapper
     def save(self, m, name=None):
@@ -435,50 +443,6 @@ class CvUnicodePathUtil:
         ndarrayBytes = np.frombuffer(ndarrayBytes, dtype=np.uint8)
         mat = cv.imdecode(ndarrayBytes, flags)
         return mat
-
-
-class AffineMats:
-    dtype = np.float32
-    zoom = lambda ratex, ratey=None: np.array(
-        [[ratex, 0, 0], [0, (ratey if ratey is not None else ratex), 0], [0, 0, 1]],
-        dtype=AffineMats.dtype,
-    )
-    shift = lambda x, y: np.array(
-        [[1, 0, x], [0, 1, y], [0, 0, 1]],
-        dtype=AffineMats.dtype,
-    )
-    flip = lambda lr, ud: np.array(
-        [[lr, 0, 0], [0, ud, 0], [0, 0, 1]],
-        dtype=AffineMats.dtype,
-    )
-    rot = lambda the: np.array(
-        [[np.cos(the), np.sin(the), 0], [-np.sin(the), np.cos(the), 0], [0, 0, 1]],
-        dtype=AffineMats.dtype,
-    )
-    identity = lambda: np.array(
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-        dtype=AffineMats.dtype,
-    )
-    fromVec2d = lambda v: np.concatenate([v, [1.0]])
-    toVec2d = lambda v: v[:2]
-
-    # def fromVec2d(v: np.ndarray):
-    #     if len(v.shape) == 1:
-    #         return np.concatenate([v, [1.0]])
-    #     else:
-    #         assert len(v.shape) == 2
-    #         return np.concatenate([v, np.ones(v.shape[:-1] + (1,))], axis=-1)
-
-    # def toVec2d(v: np.ndarray):
-    #     if len(v.shape) == 1:
-    #         return v[:2]
-    #     else:
-    #         assert len(v.shape) == 2
-    #         slce = [
-    #             slice(None, None) if i != 0 else slice(None, 2)
-    #             for i in range(len(v.shape))
-    #         ]
-    #         return v[*slce]
 
 
 class PasteImgToImg:

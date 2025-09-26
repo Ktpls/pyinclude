@@ -518,12 +518,12 @@ class expparser:
             match state:
                 case expparser._FSMGraphNode.start:
                     token = ptk.next()
+                    sec = token.toSection()
                     match token.type:
                         case (
                             expparser._TokenType.IDENTIFIER
                             | expparser._TokenType.LITERAL
                         ):
-                            sec = Section(token.start, token.end)
                             if token.type == expparser._TokenType.IDENTIFIER:
                                 obj = expparser.Ast.Identifier(
                                     val=token.value,
@@ -545,7 +545,6 @@ class expparser:
                             ptk.seek(endstate.ended_by.end)
                             state = expparser._FSMGraphNode.got_obj
                         case expparser._TokenType.OPR:
-                            sec = Section(token.start, token.end)
                             obj_opr_list.append(
                                 expparser._FlatOperatorOrganizer.Ir(
                                     elm=expparser.Ast.Operator(
@@ -563,6 +562,7 @@ class expparser:
                             token.Unexpected()
                 case expparser._FSMGraphNode.got_obj:
                     token = ptk.next()
+                    sec = token.toSection()
                     match token.type:
                         case expparser._TokenType.BRA:
                             obj: list[expparser.Ast.Element] = []
