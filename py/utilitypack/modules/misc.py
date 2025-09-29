@@ -88,7 +88,7 @@ def FloatEq(a, b, eps=1e-6):
     return abs(a - b) < eps
 
 
-def IdentityMapping(x):
+def IdentityMapping[T](x: T) -> T:
     return x
 
 

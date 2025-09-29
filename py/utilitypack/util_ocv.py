@@ -11,6 +11,7 @@ import numpy as np
 import os
 import dataclasses
 import cv2 as cv
+import typing
 
 """
 opencv
@@ -39,12 +40,12 @@ def savemat(m, name=None, ext=None, path=None, autorename=True):
 
 
 def CvNormalize_Copy(
-    src: cv.typing.MatLike,
+    src: np.ndarray,
     alpha: float = ...,
     beta: float = ...,
     norm_type: int = ...,
     dtype: int = None,
-    mask: cv.typing.MatLike | None = None,
+    mask: typing.Optional[np.ndarray] = None,
 ):
     dst = np.zeros_like(src)
     cv.normalize(src, dst, alpha, beta, norm_type, dtype, mask)
@@ -343,7 +344,7 @@ def get_AABB(binary_image):
     return (min_x, min_y, max_x, max_y)
 
 
-def NormalizeImgToChanneled_CvFormat(m: cv.Mat):
+def NormalizeImgToChanneled_CvFormat(m: np.ndarray):
     return m if len(m.shape) == 3 else m.reshape(m.shape + (1,))
 
 

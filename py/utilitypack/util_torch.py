@@ -9,9 +9,7 @@ from .util_solid import perf_statistic
 
 
 def getTorchDevice():
-    print(getDeviceInfo())
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using {device} device")
     return device
 
 
@@ -320,7 +318,7 @@ class trainpipe:
         start_time = time.time()
         ps = perf_statistic()
         for ep in range(epochnum):
-            print(f"Epoch {ep} / {epochnum}")
+            print(f"Epoch {ep+1} / {epochnum}")
             print("-------------------------------")
 
             # train
@@ -461,7 +459,7 @@ class GlobalAvgPooling(torch.nn.Module):
 
     @staticmethod
     def static_forward(x):
-        return torch.mean(x, dim=(2, 3))
+        return torch.mean(x, dim=(-2, -1))
 
     def forward(self, x):
         return GlobalAvgPooling.static_forward(x)
