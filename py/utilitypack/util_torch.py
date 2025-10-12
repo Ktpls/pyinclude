@@ -5,7 +5,8 @@ import torch
 import platform
 import os
 import random
-from .util_solid import perf_statistic
+import torchvision
+from .util_solid import perf_statistic, GetTimeString, Stream
 
 
 def getTorchDevice():
@@ -245,7 +246,7 @@ class inception(torch.nn.Module):
         return o  # channel
 
 
-class res_through(torch.nn.Module):
+class res_through(torch.nn.Sequential):
     class Combiner:
         @staticmethod
         def add(last, current):
@@ -259,33 +260,16 @@ class res_through(torch.nn.Module):
                 return torch.concat([last, current], dim=self.dim)
 
     def __init__(self, *components, combiner: "res_through.Combiner" = None) -> None:
-        super().__init__()
-        self.seq = torch.nn.Sequential(*components)
+        super().__init__(*components)
         if combiner is None:
             combiner = res_through.Combiner.add
         self.combiner = combiner
 
     def forward(self, m):
         o = m
-        for i, l in enumerate(self.seq):
+        for i, l in enumerate(self):
             ret = l(o)
             o = self.combiner(o, ret)
-        return o
-
-
-class OneShotAggregationResThrough(torch.nn.Module):
-    def __init__(self, *components, chanTotal, chanDest) -> None:
-        super().__init__()
-        self.seq = torch.nn.Sequential(*components)
-        self.combiner = torch.nn.Conv2d(chanTotal, chanDest, 1)
-
-    def forward(self, m):
-        o = [m]
-        t = m
-        for i, l in enumerate(self.seq):
-            t = l(t)
-            o.append(t)
-        o = self.combiner(torch.concat(o, dim=1))
         return o
 
 
@@ -330,12 +314,13 @@ class trainpipe:
                 optimizer.step()
                 ps.stop().countcycle()
                 if batch % outputperbatchnum == 0:
+                    print(f"Time: {GetTimeString()}")
                     print(f"Batch {batch} / {len(dataloader)}")
-                    print(f"Training speed: {ps.aveTime():>5f} seconds per batch")
+                    print(f"Training speed: {ps.aveTime():>5f} s/batch")
                     ps.clear()
-                    aveloss = loss.item()
-                    print(f"Instant loss: {aveloss:>7f}")
-                    self.train_progress_echo(batch=batch, loss=aveloss)
+                    fltloss = loss.item()
+                    print(f"Instant loss: {fltloss:>7f}")
+                    self.train_progress_echo(batch=batch, loss=fltloss)
 
         # win32api.Beep(1000, 1000)
         print("Done!")
@@ -364,6 +349,7 @@ class ConvNormInsp(torch.nn.Module):
         norm=None,
         insp=None,
         dtype=None,
+        **kw,
     ):
         super().__init__()
         self.conv = torch.nn.Conv2d(
@@ -583,3 +569,86 @@ class Deterministic:
             np.random.seed(self.seed + worker_id)
 
         return fn
+
+
+class PerceptualLoss:
+    def __init__(
+        self,
+        device: typing.Optional[str] = None,
+        use_existed_resnet18: typing.Optional[str] = None,
+    ):
+        self.device = device
+        self.use_existed_resnet18 = use_existed_resnet18
+
+        if use_existed_resnet18:
+            resnet = torchvision.models.resnet18(weights=None)
+            state_dict = torch.load(use_existed_resnet18, map_location=self.device)
+            resnet.load_state_dict(state_dict)
+        else:
+            resnet = torchvision.models.resnet18(
+                weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1
+            )
+        resnet.requires_grad_(False)
+        resnet = resnet.to(self.device)
+        resnet.eval()
+        self.resnet = resnet
+
+    def __call__(self, x: torch.Tensor, xpred: torch.Tensor):
+        """使用resnet18的前三层输出层进行损失计算"""
+
+        def exported_forward(self: torchvision.models.ResNet, x: torch.Tensor):
+            # See torchvision\models\resnet.py:ResNet._forward_impl
+            exports = []
+            x = x.repeat(1, 3, 1, 1)
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.relu(x)
+            x = self.maxpool(x)
+            exports.append(x)
+
+            x = self.layer1(x)
+            exports.append(x)
+            x = self.layer2(x)
+            exports.append(x)
+            x = self.layer3(x)
+            exports.append(x)
+            # x = self.layer4(x)
+
+            # x = self.avgpool(x)
+            # x = torch.flatten(x, 1)
+            # x = self.fc(x)
+
+            return exports
+
+        # 加载预训练的resnet18模型
+
+        resnet = self.resnet
+        # 提取特征
+        with torch.no_grad():
+            lfeat_x = exported_forward(resnet, x)
+        lfeat_xpred = exported_forward(resnet, xpred)
+        loss_perc = torch.mean(
+            Stream(zip(lfeat_x, lfeat_xpred))
+            .map(lambda feat_x, feat_xpred: torch.mean((feat_x - feat_xpred) ** 2))
+            .collect(sum)
+        )
+
+        # 返回加权总损失
+        return loss_perc
+
+
+class SquezzeAndExcitation(torch.nn.Module):
+    def __init__(self, in_feature: int, inner_dim: int):
+        super().__init__()
+        self.fc = torch.nn.Sequential(
+            torch.nn.Linear(in_feature, inner_dim),
+            torch.nn.LeakyReLU(),
+            torch.nn.Linear(inner_dim, in_feature),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        pooled = GlobalAvgPooling.static_forward(x)
+        k = self.fc(pooled)
+        x = x * k[:, :, None, None]
+        return x

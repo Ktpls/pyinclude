@@ -9,7 +9,7 @@ from .io import ReadTextFile, WriteTextFile
 
 
 def GetTimeString():
-    return datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S:%f")
 
 
 def SleepUntil(con: typing.Callable, dt=None, sleepImpl=None):
