@@ -297,41 +297,41 @@ class trainpipe:
         optimizer,
         epochnum=10,
         outputperbatchnum=100,
-        customSubOnOutput=None,
     ):
-        start_time = time.time()
         ps = perf_statistic()
         for ep in range(epochnum):
             print(f"Epoch {ep+1} / {epochnum}")
             print("-------------------------------")
-
             # train
             for batch, datatuple in enumerate(dataloader):
                 ps.start()
-                loss = self.trainprogress(datatuple)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                loss = self.optimize(optimizer, datatuple)
                 ps.stop().countcycle()
                 if batch % outputperbatchnum == 0:
-                    print(f"Time: {GetTimeString()}")
-                    print(f"Batch {batch} / {len(dataloader)}")
-                    print(f"Training speed: {ps.aveTime():>5f} s/batch")
-                    ps.clear()
-                    fltloss = loss.item()
-                    print(f"Instant loss: {fltloss:>7f}")
-                    self.train_progress_echo(batch=batch, loss=fltloss)
+                    self.report_train_progress(ps, batch, len(dataloader), loss.item())
 
         # win32api.Beep(1000, 1000)
         print("Done!")
 
+    def report_train_progress(self, ps, batch, batch_per_epoch, loss):
+        print(f"Time: {GetTimeString()}")
+        print(f"Batch {batch} / {batch_per_epoch}")
+        print(f"Training speed: {ps.aveTime():>5f} s/batch")
+        ps.clear()
+        fltloss = loss
+        print(f"Instant loss: {fltloss:>7f}")
+        return fltloss
+
+    def optimize(self, optimizer, datatuple):
+        loss = self.calcloss(datatuple)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        return loss
+
     def prepare(self): ...
 
-    def train_progress_echo(self, batch, loss): ...
-
-    def calcloss(self, *arg, **kw): ...
-
-    def trainprogress(self, datatuple): ...
+    def calcloss(self, datatuple): ...
 
     def inferenceProgress(self, datatuple): ...
 
@@ -575,58 +575,59 @@ class PerceptualLoss:
     def __init__(
         self,
         device: typing.Optional[str] = None,
-        use_existed_resnet18: typing.Optional[str] = None,
+        use_existed_weight: typing.Optional[str] = None,
     ):
         self.device = device
-        self.use_existed_resnet18 = use_existed_resnet18
+        self.use_existed_weight = use_existed_weight
+        self.model = self.get_model().requires_grad_(False).eval().to(self.device)
 
-        if use_existed_resnet18:
-            resnet = torchvision.models.resnet18(weights=None)
-            state_dict = torch.load(use_existed_resnet18, map_location=self.device)
-            resnet.load_state_dict(state_dict)
+    def get_model(self):
+        if self.use_existed_weight:
+            model = torchvision.models.resnet18(weights=None)
+            model.load_state_dict(
+                torch.load(self.use_existed_weight, map_location=self.device)
+            )
         else:
-            resnet = torchvision.models.resnet18(
+            model = torchvision.models.resnet18(
                 weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1
             )
-        resnet.requires_grad_(False)
-        resnet = resnet.to(self.device)
-        resnet.eval()
-        self.resnet = resnet
+
+        return model
+
+    def exported_forward(
+        self_percloss, self: torchvision.models.ResNet, x: torch.Tensor
+    ):
+        """使用resnet的前三层输出层进行损失计算"""
+        # See torchvision\models\resnet.py:ResNet._forward_impl
+        exports = []
+        x = x.repeat(1, 3, 1, 1)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        exports.append(x)
+
+        x = self.layer1(x)
+        exports.append(x)
+        x = self.layer2(x)
+        exports.append(x)
+        x = self.layer3(x)
+        exports.append(x)
+        # x = self.layer4(x)
+
+        # x = self.avgpool(x)
+        # x = torch.flatten(x, 1)
+        # x = self.fc(x)
+
+        return exports
 
     def __call__(self, x: torch.Tensor, xpred: torch.Tensor):
-        """使用resnet18的前三层输出层进行损失计算"""
 
-        def exported_forward(self: torchvision.models.ResNet, x: torch.Tensor):
-            # See torchvision\models\resnet.py:ResNet._forward_impl
-            exports = []
-            x = x.repeat(1, 3, 1, 1)
-            x = self.conv1(x)
-            x = self.bn1(x)
-            x = self.relu(x)
-            x = self.maxpool(x)
-            exports.append(x)
-
-            x = self.layer1(x)
-            exports.append(x)
-            x = self.layer2(x)
-            exports.append(x)
-            x = self.layer3(x)
-            exports.append(x)
-            # x = self.layer4(x)
-
-            # x = self.avgpool(x)
-            # x = torch.flatten(x, 1)
-            # x = self.fc(x)
-
-            return exports
-
-        # 加载预训练的resnet18模型
-
-        resnet = self.resnet
+        model = self.model
         # 提取特征
         with torch.no_grad():
-            lfeat_x = exported_forward(resnet, x)
-        lfeat_xpred = exported_forward(resnet, xpred)
+            lfeat_x = self.exported_forward(model, x)
+        lfeat_xpred = self.exported_forward(model, xpred)
         loss_perc = torch.mean(
             Stream(zip(lfeat_x, lfeat_xpred))
             .map(lambda feat_x, feat_xpred: torch.mean((feat_x - feat_xpred) ** 2))
@@ -652,3 +653,7 @@ class SquezzeAndExcitation(torch.nn.Module):
         k = self.fc(pooled)
         x = x * k[:, :, None, None]
         return x
+
+
+def tensor_contains_nan(x: torch.Tensor):
+    return torch.any(torch.isnan(x))

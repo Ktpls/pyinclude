@@ -5,7 +5,7 @@ import threading
 import traceback
 import typing
 import functools
-from .misc import FunctionalWrapper, EasyWrapper, Switch
+from .misc import FunctionalWrapper, EasyWrapper, Switch, SingletonIsolation
 from .time import PreciseSleep
 
 UTS_DEFAULT_THREAD_POOL = concurrent.futures.ThreadPoolExecutor()
@@ -211,10 +211,26 @@ class SyncExecutableManager:
         self.executionLock = threading.RLock()
         self.stage = stage
 
+    def _SubmitSyncExecutable(self, se: SyncExecutable, *a, **kw):
+        def foo():
+            try:
+                se._ConfirmExecutionPrivilege()
+                se.main(*a, **kw)
+            finally:
+                se.state = se.STATE.stopped
+                se._ExitExecution()
+
+        self.executionLock.acquire()
+        se.state = se.STATE.running
+        se.future = self.pool.submit(foo)
+        self.selist.append(se)
+        self.executionLock.release()
+
     def _GiveExecutionPrivilegeToSe(self, se: "SyncExecutable"):
         # consider wait asyncly here and below
-        se.cond.notify_all()
-        se.cond.wait()
+        se._GiveExecutionPrivilege()
+        if se.future:
+            ...
 
     def step(self):
         # call this on wolf update
@@ -228,6 +244,7 @@ class SyncExecutableManager:
             if se.state == SyncExecutable.STATE.waitingCondition:
                 # knowing not satisfied, skip waking up
                 if se.waitCondition():
+                    se.state = SyncExecutable.STATE.running
                     self._GiveExecutionPrivilegeToSe(se)
             elif se.state == SyncExecutable.STATE.running:
                 self._GiveExecutionPrivilegeToSe(se)
@@ -240,19 +257,18 @@ class SyncExecutableManager:
 
 
 class SyncExecutable:
-    # for impl serialized but sync mechanization in async foo
+    # for impl sequential but sync mechanization in async foo
     class STATE(enum.Enum):
         stopped = 0
         running = 1
         waitingCondition = 2
 
-    def __init__(self, sem: SyncExecutableManager, raiseOnErr=True) -> None:
+    def __init__(self, sem: SyncExecutableManager) -> None:
         self.sem = sem
         self.cond = threading.Condition(sem.executionLock)
-        self.state = self.STATE.stopped
-        self.future = None
-        self.raiseOnErr = raiseOnErr
-        self.waitCondition = None
+        self.state: SyncExecutable.STATE = self.STATE.stopped
+        self.future: typing.Optional[concurrent.futures.Future] = None
+        self.waitCondition: typing.Optional[typing.Callable[[], bool]] = None
 
     # override
     def main(self, **arg):
@@ -260,6 +276,11 @@ class SyncExecutable:
 
     def _ConfirmExecutionPrivilege(self):
         self.cond.acquire(True)
+
+    def _GiveExecutionPrivilege(self):
+        # called by other threads
+        self.cond.notify_all()
+        self.cond.wait()
 
     def _GiveAwayExecutionPrivilege(self):
         self.cond.notify_all()
@@ -270,24 +291,8 @@ class SyncExecutable:
         self.cond.release()
 
     def run(self, *a, **kw):
-        def foo():
-            try:
-                self._ConfirmExecutionPrivilege()
-                self.main(*a, **kw)
-            except Exception as e:
-                traceback.print_exc()
-                if self.raiseOnErr:
-                    raise e
-            finally:
-                self.state = self.STATE.stopped
-                self._ExitExecution()
-
         if not self.isworking():
-            self.sem.executionLock.acquire()
-            self.state = self.STATE.running
-            self.future = self.sem.pool.submit(foo)
-            self.sem.selist.append(self)
-            self.sem.executionLock.release()
+            self.sem._SubmitSyncExecutable(self, *a, **kw)
         return self
 
     # available in main
@@ -492,3 +497,18 @@ class ReadWriteLock:
 
     def gen_wlock(self):
         return ReadWriteLock.WriteLock(self)
+
+
+class SingletonThreadIsolation(SingletonIsolation):
+    __inst_dict = threading.local()
+    __lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls):
+        with SingletonThreadIsolation.__lock:
+            if not hasattr(SingletonThreadIsolation.__inst_dict, "store"):
+                SingletonThreadIsolation.__inst_dict.store = dict()
+            store: dict = SingletonThreadIsolation.__inst_dict.store
+            if cls.__qualname__ not in store:
+                store[cls.__qualname__] = cls()
+            return store[cls.__qualname__]

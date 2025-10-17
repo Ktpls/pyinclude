@@ -21,7 +21,7 @@ import threading
 import time
 import types
 import typing
-
+import contextvars
 from .io import EnsureDirectoryExists
 from .time import SingleSectionedTimer
 
@@ -1753,3 +1753,35 @@ class CommitUnpressureizer:
 
     def force_commit(self):
         self.func()
+
+
+class SingletonIsolation:
+    @classmethod
+    def get_instance(cls) -> typing.Any: ...
+
+
+class SingletonContextIsolation(SingletonIsolation):
+    __inst_dict: contextvars.ContextVar[
+        dict[type[SingletonIsolation], SingletonIsolation]
+    ] = contextvars.ContextVar("__inst_dict")
+
+    @classmethod
+    def get_instance(cls):
+        try:
+            store = SingletonContextIsolation.__inst_dict.get()
+        except LookupError:
+            store = {}
+            SingletonContextIsolation.__inst_dict.set(store)
+        if cls.__qualname__ not in store:
+            store[cls.__qualname__] = cls()
+        return store[cls.__qualname__]
+
+
+class SingletonGlobalIsolation(SingletonIsolation):
+    __inst_dict = dict()
+
+    @classmethod
+    def get_instance(cls):
+        if cls not in SingletonGlobalIsolation.__inst_dict:
+            SingletonGlobalIsolation.__inst_dict[cls] = cls()
+        return SingletonGlobalIsolation.__inst_dict[cls]
