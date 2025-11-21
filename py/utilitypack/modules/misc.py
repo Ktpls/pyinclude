@@ -475,6 +475,16 @@ class BeanUtil:
             }
 
 
+def ComputeIfAbsent(
+    dict: typing.MutableMapping, key, func: typing.Callable[[], typing.Any]
+):
+    if key not in dict:
+        instance = dict[key] = func()
+    else:
+        instance = dict[key]
+    return instance
+
+
 class Container:
     v = None
 
@@ -1172,18 +1182,18 @@ class Stream[T](typing.Iterable[T]):
     @typing.overload
     def flat_map[*Ts, R](
         self: Stream[tuple[*Ts]],
-        func: typing.Callable[[*Ts], Stream[R]],
+        func: typing.Callable[[*Ts], typing.Iterable[R]],
         pred_option: Stream.PredProcessOption = None,
     ) -> Stream[R]: ...
     @typing.overload
     def flat_map[R](
         self,
-        func: typing.Callable[[T], Stream[R]],
+        func: typing.Callable[[T], typing.Iterable[R]],
         pred_option: Stream.PredProcessOption = None,
     ) -> Stream[R]: ...
     def flat_map[R](
         self,
-        func: typing.Callable[[T], Stream[R]],
+        func: typing.Callable[[T], typing.Iterable[R]],
         pred_option: Stream.PredProcessOption = None,
     ) -> Stream[R]:
         func = self._processed_pred(func, pred_option=pred_option)
@@ -1233,18 +1243,18 @@ class Stream[T](typing.Iterable[T]):
     @typing.overload
     def peek[*Ts](
         self: Stream[tuple[*Ts]],
-        func: typing.Callable[[*Ts], None],
+        func: typing.Callable[[*Ts], typing.Any],
         pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     @typing.overload
     def peek(
         self,
-        func: typing.Callable[[T], None],
+        func: typing.Callable[[T], typing.Any],
         pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     def peek(
         self,
-        func: typing.Callable[[T], None],
+        func: typing.Callable[[T], typing.Any],
         pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self:
         func = self._processed_pred(func, pred_option=pred_option)
@@ -1761,27 +1771,32 @@ class SingletonIsolation:
 
 
 class SingletonContextIsolation(SingletonIsolation):
-    __inst_dict: contextvars.ContextVar[
+    _inst_dict: contextvars.ContextVar[
         dict[type[SingletonIsolation], SingletonIsolation]
     ] = contextvars.ContextVar("__inst_dict")
 
     @classmethod
     def get_instance(cls):
+        store = cls.get_or_init_inst_dict()
+        return ComputeIfAbsent(store, cls.__qualname__, cls)
+
+    @classmethod
+    def get_or_init_inst_dict(cls):
         try:
-            store = SingletonContextIsolation.__inst_dict.get()
+            store = cls._inst_dict.get()
         except LookupError:
             store = {}
-            SingletonContextIsolation.__inst_dict.set(store)
-        if cls.__qualname__ not in store:
-            store[cls.__qualname__] = cls()
-        return store[cls.__qualname__]
+            cls._inst_dict.set(store)
+        return store
 
 
 class SingletonGlobalIsolation(SingletonIsolation):
-    __inst_dict = dict()
+    _inst_dict = dict()
 
     @classmethod
     def get_instance(cls):
-        if cls not in SingletonGlobalIsolation.__inst_dict:
-            SingletonGlobalIsolation.__inst_dict[cls] = cls()
-        return SingletonGlobalIsolation.__inst_dict[cls]
+        return ComputeIfAbsent(cls._inst_dict, cls.__qualname__, cls)
+
+
+def ccomma[*Ts, T](*a: typing.Unpack[tuple[*Ts, T]]) -> T:
+    return a[-1]

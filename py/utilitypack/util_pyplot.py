@@ -51,6 +51,9 @@ class MassivePicturePlot:
     def isFull(self):
         return self.i > np.prod(self.plotShape)
 
+    def show(self, img_ndarray):
+        self.toNextPlot().imshow(img_ndarray)
+
 
 @dataclasses.dataclass
 class MassivePicturePlotSubimged(MassivePicturePlot):

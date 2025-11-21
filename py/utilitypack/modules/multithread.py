@@ -5,7 +5,13 @@ import threading
 import traceback
 import typing
 import functools
-from .misc import FunctionalWrapper, EasyWrapper, Switch, SingletonIsolation
+from .misc import (
+    FunctionalWrapper,
+    EasyWrapper,
+    Switch,
+    SingletonIsolation,
+    ComputeIfAbsent,
+)
 from .time import PreciseSleep
 
 UTS_DEFAULT_THREAD_POOL = concurrent.futures.ThreadPoolExecutor()
@@ -207,7 +213,7 @@ class SyncExecutableManager:
         self, pool: concurrent.futures.ThreadPoolExecutor, stage: Stage
     ) -> None:
         self.pool = pool
-        self.selist: list[SyncExecutable] = []
+        self.unstopped_se: list[SyncExecutable] = []
         self.executionLock = threading.RLock()
         self.stage = stage
 
@@ -223,37 +229,35 @@ class SyncExecutableManager:
         self.executionLock.acquire()
         se.state = se.STATE.running
         se.future = self.pool.submit(foo)
-        self.selist.append(se)
+        self.unstopped_se.append(se)
         self.executionLock.release()
 
-    def _GiveExecutionPrivilegeToSe(self, se: "SyncExecutable"):
+    def _GiveExecutionPrivilegeToSe(self, se: "SyncExecutable", err_check: bool = True):
         # consider wait asyncly here and below
         se._GiveExecutionPrivilege()
-        if se.future:
-            ...
+        if err_check and se.state == SyncExecutable.STATE.stopped:
+            if err := se.future.exception():
+                raise err
 
     def step(self):
         # call this on wolf update
         # make sure setting running before submitting. or would be possibly kicked out here
-        self.executionLock.acquire()
-
-        self.selist = [
-            e for e in self.selist if e.state != SyncExecutable.STATE.stopped
-        ]
-        for se in self.selist:
-            if se.state == SyncExecutable.STATE.waitingCondition:
-                # knowing not satisfied, skip waking up
-                if se.waitCondition():
-                    se.state = SyncExecutable.STATE.running
+        with self.executionLock:
+            for se in self.unstopped_se:
+                if se.state == SyncExecutable.STATE.waitingCondition:
+                    # knowing not satisfied, skip waking up
+                    if se.waitCondition():
+                        se.state = SyncExecutable.STATE.running
+                        self._GiveExecutionPrivilegeToSe(se)
+                elif se.state == SyncExecutable.STATE.running:
                     self._GiveExecutionPrivilegeToSe(se)
-            elif se.state == SyncExecutable.STATE.running:
-                self._GiveExecutionPrivilegeToSe(se)
-            elif se.state == SyncExecutable.STATE.stopped:
-                pass
-            else:
-                pass
-
-        self.executionLock.release()
+                elif se.state == SyncExecutable.STATE.stopped:
+                    pass
+                else:
+                    pass
+            self.unstopped_se = [
+                e for e in self.unstopped_se if e.state != SyncExecutable.STATE.stopped
+            ]
 
 
 class SyncExecutable:
@@ -500,15 +504,13 @@ class ReadWriteLock:
 
 
 class SingletonThreadIsolation(SingletonIsolation):
-    __inst_dict = threading.local()
-    __lock = threading.Lock()
+    _inst_dict = threading.local()
+    _lock = threading.Lock()
 
     @classmethod
     def get_instance(cls):
-        with SingletonThreadIsolation.__lock:
-            if not hasattr(SingletonThreadIsolation.__inst_dict, "store"):
-                SingletonThreadIsolation.__inst_dict.store = dict()
-            store: dict = SingletonThreadIsolation.__inst_dict.store
-            if cls.__qualname__ not in store:
-                store[cls.__qualname__] = cls()
-            return store[cls.__qualname__]
+        with cls._lock:
+            if not hasattr(cls._inst_dict, "store"):
+                cls._inst_dict.store = dict()
+            store: dict = cls._inst_dict.store
+            return ComputeIfAbsent(store, cls.__qualname__, cls)

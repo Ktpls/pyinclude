@@ -41,15 +41,16 @@ class DbEntityBaseMixin:
 
     def to_dict(self):
         """Convert SQLAlchemy model to dictionary for JSON serialization"""
-        return {
-            column.key: getattr(self, column.key)
-            for column in sqlalchemy.inspect(self).mapper.column_attrs
-        }
+        return {column.key: getattr(self, column.key) for column in self.iter_columns()}
+
+    @classmethod
+    def iter_columns(self):
+        return sqlalchemy.inspect(self).mapper.column_attrs
 
     @classmethod
     def from_dict(cls, data, move_from=None):
         """Convert SQLAlchemy model to dictionary for JSON serialization"""
         ret = move_from or cls()
-        for column in sqlalchemy.inspect(cls).mapper.column_attrs:
+        for column in cls.iter_columns():
             setattr(ret, column.key, data.get(column.key) or getattr(ret, column.key))
         return ret

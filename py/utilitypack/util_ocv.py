@@ -496,6 +496,20 @@ class PasteImgToImg:
             return img_existed + img_new
 
 
+def min_max_normalize(y: np.ndarray, eps: float = 1e-5):
+    max, min = np.max(y), np.min(y)
+    return (y - min) / np.maximum(max - min, eps)
+
+
+def std_normalize(y: np.ndarray, eps: float = 1e-5, sigmas: float = 3):
+    mean, std = np.mean(y), np.std(y)
+    return np.clip((y - mean) / np.maximum(std, eps), -sigmas, sigmas)
+
+
+def viewable_hdr_img(img: np.ndarray):
+    return std_normalize(np.log1p(np.clip(img, a_min=0, a_max=None)))
+
+
 try:
 
     import scipy.interpolate as interpolate

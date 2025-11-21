@@ -130,9 +130,13 @@ class expparser:
             elif self == expparser._OprType.NOT:
                 return not arg[0]
             elif self == expparser._OprType.AND:
-                return arg[0] and arg[1]
+                if arg[0]:
+                    return arg[1]
+                return arg[0]
             elif self == expparser._OprType.OR:
-                return arg[0] or arg[1]
+                if arg[0]:
+                    return arg[0]
+                return arg[1]
             elif self == expparser._OprType.XOR:
                 return arg[0] ^ arg[1]
             elif self == expparser._OprType.CALL:
@@ -147,7 +151,7 @@ class expparser:
         FSMUtil.RegexpTokenMatcher(exp=r"^//.+?\n", type=_TokenType.COMMENT),
         FSMUtil.RegexpTokenMatcher(exp=r"^/\*.+?\*/", type=_TokenType.COMMENT),
         FSMUtil.RegexpTokenMatcher(
-            exp=r"^(<=)|(>=)|(\^\^)|(!=)", type=_TokenType.OPR
+            exp=r"^(<=)|(>=)|(\^\^)|(!=)|(==)", type=_TokenType.OPR
         ),  # two width operator, match before single widthed ones to get priority
         FSMUtil.RegexpTokenMatcher(
             exp=r"^[*/+\-^=<>&|!]", type=_TokenType.OPR
@@ -648,9 +652,12 @@ class expparser:
         "atan": math.atan,
         "atan2": math.atan2,
         "exp": math.exp,
+        "ln": math.log,
         "log": math.log,
         "log2": math.log2,
+        "lg": math.log10,
         "log10": math.log10,
+        "log1p": math.log1p,
         "sqrt": math.sqrt,
         "abs": abs,
         "sign": lambda x: 1 if x > 0 else -1 if x < 0 else 0,

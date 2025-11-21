@@ -418,3 +418,107 @@ class AffineMats:
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
         dtype=AffineMats.dtype,
     )
+
+
+def merge_splited_imgs(
+    imgs: list[list[typing.Optional[np.ndarray]]], channel_num: int, dtype: np.dtype
+) -> np.ndarray:
+    """
+    imgs是形如
+        [
+            [img1, img2, img3, ...],
+            [img4, img5, img6, ...],
+            [img7, img8, img9, ...],
+            ...
+        ]的列表
+    """
+    if not imgs or not imgs[0]:
+        raise ValueError("Input image list is empty")
+
+    n_rows = len(imgs)
+    n_cols = len(imgs[0])
+
+    # 1. 获取每行的高度（取每行最左非None图的高度）
+    row_heights = []
+    for i in range(n_rows):
+        row_height = None
+        for j in range(n_cols):
+            if imgs[i][j] is not None:
+                row_height = imgs[i][j].shape[0]
+                break
+        if row_height is None:
+            raise ValueError(f"Row {i} has no non-None images")
+        row_heights.append(row_height)
+
+    # 2. 获取每列的宽度（取每列最上非None图的宽度）
+    col_widths = []
+    for j in range(n_cols):
+        col_width = None
+        for i in range(n_rows):
+            if imgs[i][j] is not None:
+                col_width = imgs[i][j].shape[1]
+                break
+        if col_width is None:
+            raise ValueError(f"Column {j} has no non-None images")
+        col_widths.append(col_width)
+
+    # 3. 校验图像高度一致性
+    for i in range(n_rows):
+        expected_height = row_heights[i]
+        for j in range(n_cols):
+            expected_width = col_widths[j]
+            img = imgs[i][j]
+            if img is not None:
+                if img.shape[0] != expected_height:
+                    raise ValueError(
+                        f"Row {i} height inconsistency: "
+                        f"expected {expected_height}, got {img.shape[0]} at position ({i}, {j})"
+                    )
+                if img.shape[1] != expected_width:
+                    raise ValueError(
+                        f"Column {j} width inconsistency: "
+                        f"expected {expected_width}, got {img.shape[1]} at position ({i}, {j})"
+                    )
+
+    # 6. 计算总宽度和总高度
+    total_width = sum(col_widths)
+    total_height = sum(row_heights)
+
+    # 7. 创建新图像，用0填充
+    merged_img = np.zeros((total_height, total_width, channel_num), dtype=dtype)
+
+    # 8. 计算每行和每列的起始坐标
+    row_starts = [0]
+    for i in range(n_rows - 1):
+        row_starts.append(row_starts[-1] + row_heights[i])
+
+    col_starts = [0]
+    for j in range(n_cols - 1):
+        col_starts.append(col_starts[-1] + col_widths[j])
+
+    # 9. 遍历每个图像，放到新图对应位置
+    for i in range(n_rows):
+        for j in range(n_cols):
+            img = imgs[i][j]
+            if img is not None:
+                y_start = row_starts[i]
+                x_start = col_starts[j]
+                y_end = y_start + img.shape[0]
+                x_end = x_start + img.shape[1]
+
+                # 处理灰度图和彩色图
+                if channel_num == 1:
+                    if len(img.shape) == 3:  # 如果输入是彩色图但目标是灰度图
+                        merged_img[y_start:y_end, x_start:x_end] = img.mean(
+                            axis=2
+                        ).astype(np.uint8)
+                    else:
+                        merged_img[y_start:y_end, x_start:x_end] = img
+                else:
+                    if len(img.shape) == 2:  # 如果输入是灰度图但目标是彩色图
+                        for c in range(channel_num):
+                            merged_img[y_start:y_end, x_start:x_end, c] = img
+                    else:
+                        merged_img[y_start:y_end, x_start:x_end] = img
+
+    return merged_img

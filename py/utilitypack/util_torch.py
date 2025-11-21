@@ -6,7 +6,7 @@ import platform
 import os
 import random
 import torchvision
-from .util_solid import perf_statistic, GetTimeString, Stream
+from .util_solid import perf_statistic, GetTimeString, Stream, EnsureFileDirExists
 
 
 def getTorchDevice():
@@ -89,6 +89,7 @@ def setModule(model: torch.nn.Module, path=None, device=None, strict=True):
 
 
 def savemodel(model: torch.nn.Module, path):
+    EnsureFileDirExists(path)
     torch.save(model.state_dict(), path)
     print(f"Saved PyTorch Model State to {path}")
 
@@ -149,10 +150,10 @@ class inception(torch.nn.Module):
     def __init__(
         self,
         infeat,
-        outfeat11,
-        outfeatpool,
-        outfeat33,
-        outfeat55,
+        outfeat11: int,
+        outfeatpool: int,
+        outfeat33: int,
+        outfeat55: int,
         isbn=True,
         version=None,
     ) -> None:
@@ -167,58 +168,90 @@ class inception(torch.nn.Module):
             version = "v2"
         self.version = version
         if version == "v2":
-            self.path11 = torch.nn.Sequential(
-                torch.nn.Conv2d(infeat, outfeat11, 1, padding="same"),
-                torch.nn.LeakyReLU(),
+            self.path11 = (
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(infeat, outfeat11, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeat11
+                else None
             )
-            self.pathpool = torch.nn.Sequential(
-                torch.nn.MaxPool2d(3, stride=1, padding=1),
-                torch.nn.Conv2d(infeat, outfeatpool, 1, padding="same"),
-                torch.nn.LeakyReLU(),
+            self.pathpool = (
+                torch.nn.Sequential(
+                    torch.nn.MaxPool2d(3, stride=1, padding=1),
+                    torch.nn.Conv2d(infeat, outfeatpool, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeatpool
+                else None
             )
-            self.path33 = torch.nn.Sequential(
-                torch.nn.Conv2d(infeat, infeat, 1, padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(infeat, outfeat33, 3, padding="same"),
-                torch.nn.LeakyReLU(),
+            self.path33 = (
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(infeat, infeat, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(infeat, outfeat33, 3, padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeat33
+                else None
             )
-            self.path55 = torch.nn.Sequential(
-                torch.nn.Conv2d(infeat, infeat, 1, padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(infeat, outfeat55, 3, padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat55, outfeat55, 3, padding="same"),
-                torch.nn.LeakyReLU(),
+            self.path55 = (
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(infeat, infeat, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(infeat, outfeat55, 3, padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat55, outfeat55, 3, padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeat55
+                else None
             )
         elif version == "v3":
-            self.path11 = torch.nn.Sequential(
-                torch.nn.Conv2d(infeat, outfeat11, 1, padding="same"),
-                torch.nn.LeakyReLU(),
+            self.path11 = (
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(infeat, outfeat11, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeat11
+                else None
             )
-            self.pathpool = torch.nn.Sequential(
-                torch.nn.MaxPool2d(3, stride=1, padding=1),
-                torch.nn.Conv2d(infeat, outfeatpool, 1, padding="same"),
-                torch.nn.LeakyReLU(),
+            self.pathpool = (
+                torch.nn.Sequential(
+                    torch.nn.MaxPool2d(3, stride=1, padding=1),
+                    torch.nn.Conv2d(infeat, outfeatpool, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeatpool
+                else None
             )
-            self.path33 = torch.nn.Sequential(
-                torch.nn.Conv2d(infeat, outfeat55, 1, padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat55, outfeat33, [1, 3], padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat33, outfeat33, [3, 1], padding="same"),
-                torch.nn.LeakyReLU(),
+            self.path33 = (
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(infeat, outfeat55, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat55, outfeat33, [1, 3], padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat33, outfeat33, [3, 1], padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeat33
+                else None
             )
-            self.path55 = torch.nn.Sequential(
-                torch.nn.Conv2d(infeat, outfeat55, 1, padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat55, outfeat55, [1, 3], padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat55, outfeat55, [3, 1], padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat55, outfeat55, [1, 3], padding="same"),
-                torch.nn.LeakyReLU(),
-                torch.nn.Conv2d(outfeat55, outfeat55, [3, 1], padding="same"),
-                torch.nn.LeakyReLU(),
+            self.path55 = (
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(infeat, outfeat55, 1, padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat55, outfeat55, [1, 3], padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat55, outfeat55, [3, 1], padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat55, outfeat55, [1, 3], padding="same"),
+                    torch.nn.LeakyReLU(),
+                    torch.nn.Conv2d(outfeat55, outfeat55, [3, 1], padding="same"),
+                    torch.nn.LeakyReLU(),
+                )
+                if outfeat55
+                else None
             )
         else:
             raise ValueError(f"{version} not supported")
@@ -230,17 +263,30 @@ class inception(torch.nn.Module):
             self.bn = None
 
     @staticmethod
-    def even(infeat, outfeat, bn=None, version=None):
-        assert outfeat % 4 == 0
+    def even(infeat: int, outfeat: int, bn=None, version=None):
         outfeatby4 = outfeat // 4
+        leftovers = outfeat - outfeatby4 * 4
         return inception(
-            infeat, outfeatby4, outfeatby4, outfeatby4, outfeatby4, bn, version
+            infeat=infeat,
+            outfeat11=outfeatby4,
+            outfeatpool=outfeatby4,
+            outfeat33=outfeatby4 + leftovers,
+            outfeat55=outfeatby4,
+            isbn=bn,
+            version=version,
         )
 
     def forward(self, m):
-        o = torch.concat(
-            [self.path11(m), self.pathpool(m), self.path33(m), self.path55(m)], dim=-3
-        )
+        lpath_result = []
+        if self.path11:
+            lpath_result.append(self.path11(m))
+        if self.pathpool:
+            lpath_result.append(self.pathpool(m))
+        if self.path33:
+            lpath_result.append(self.path33(m))
+        if self.path55:
+            lpath_result.append(self.path55(m))
+        o = torch.concat(lpath_result, dim=-3)
         if self.bn is not None:
             o = self.bn(o)
         return o  # channel
@@ -341,18 +387,26 @@ class trainpipe:
 class ConvNormInsp(torch.nn.Module):
     def __init__(
         self,
+        **kw,
+    ):
+        super().__init__()
+        self.conv = self.get_conv(**kw)
+        self.norm = self.get_norm(**kw)
+        self.insp = self.get_insp(**kw)
+
+    def get_norm(self, **kw): ...
+    def get_insp(self, **kw): ...
+    def get_conv(
+        self,
         in_channels,
         out_channels,
         kernel_size=3,
         stride=1,
         padding="same",
-        norm=None,
-        insp=None,
         dtype=None,
         **kw,
     ):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
+        return torch.nn.Conv2d(
             in_channels,
             out_channels,
             kernel_size,
@@ -360,51 +414,35 @@ class ConvNormInsp(torch.nn.Module):
             padding=padding,
             dtype=dtype,
         )
-        self.norm = norm
-        self.insp = insp
 
     def forward(self, x):
         x = self.conv(x)
         if self.norm is not None:
             x = self.norm(x)
-        x = self.insp(x)
+        if self.insp is not None:
+            x = self.insp(x)
         return x
 
 
 class ConvGnRelu(ConvNormInsp):
-    def __init__(self, in_channels, out_channels, numGroup=4, *a, **kw):
-        super().__init__(
-            in_channels,
-            out_channels,
-            norm=torch.nn.GroupNorm(numGroup, out_channels),
-            insp=torch.nn.LeakyReLU(),
-            *a,
-            **kw,
-        )
+    def get_norm(self, out_channels, numGroup=4, **kw):
+        return torch.nn.GroupNorm(numGroup, out_channels)
+
+    def get_insp(self, **kw):
+        return torch.nn.LeakyReLU()
 
 
-class ConvGnHs(ConvNormInsp):
-    def __init__(self, in_channels, out_channels, numGroup=4, *a, **kw):
-        super().__init__(
-            in_channels,
-            out_channels,
-            norm=torch.nn.GroupNorm(numGroup, out_channels),
-            insp=torch.nn.Hardswish(),
-            *a,
-            **kw,
-        )
+class ConvGnHs(ConvGnRelu):
+    def get_insp(self, **kw):
+        return torch.nn.Hardswish()
 
 
 class ConvBnHs(ConvNormInsp):
-    def __init__(self, in_channels, out_channels, *a, **kw):
-        super().__init__(
-            in_channels,
-            out_channels,
-            norm=torch.nn.BatchNorm2d(out_channels),
-            insp=torch.nn.Hardswish(),
-            *a,
-            **kw,
-        )
+    def get_norm(self, out_channels, **kw):
+        return torch.nn.BatchNorm2d(out_channels)
+
+    def get_insp(self, **kw):
+        return torch.nn.Hardswish()
 
 
 class OneShotAggregationResThrough(torch.nn.Module):
@@ -576,10 +614,12 @@ class PerceptualLoss:
         self,
         device: typing.Optional[str] = None,
         use_existed_weight: typing.Optional[str] = None,
+        depth: int = 4,
     ):
         self.device = device
         self.use_existed_weight = use_existed_weight
         self.model = self.get_model().requires_grad_(False).eval().to(self.device)
+        self.depth = depth
 
     def get_model(self):
         if self.use_existed_weight:
@@ -597,27 +637,41 @@ class PerceptualLoss:
     def exported_forward(
         self_percloss, self: torchvision.models.ResNet, x: torch.Tensor
     ):
-        """使用resnet的前三层输出层进行损失计算"""
+        """使用resnet的前几层提取特征进行损失计算"""
         # See torchvision\models\resnet.py:ResNet._forward_impl
         exports = []
-        x = x.repeat(1, 3, 1, 1)
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        exports.append(x)
+        while True:
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.relu(x)
+            x = self.maxpool(x)
+            exports.append(x)
+            if len(exports) >= self_percloss.depth:
+                break
 
-        x = self.layer1(x)
-        exports.append(x)
-        x = self.layer2(x)
-        exports.append(x)
-        x = self.layer3(x)
-        exports.append(x)
-        # x = self.layer4(x)
+            x = self.layer1(x)
+            exports.append(x)
+            if len(exports) >= self_percloss.depth:
+                break
+            x = self.layer2(x)
+            exports.append(x)
+            if len(exports) >= self_percloss.depth:
+                break
+            x = self.layer3(x)
+            exports.append(x)
+            if len(exports) >= self_percloss.depth:
+                break
+            x = self.layer4(x)
+            exports.append(x)
+            if len(exports) >= self_percloss.depth:
+                break
 
-        # x = self.avgpool(x)
-        # x = torch.flatten(x, 1)
-        # x = self.fc(x)
+            x = self.avgpool(x)
+            x = torch.flatten(x, 1)
+            x = self.fc(x)
+            exports.append(x)
+            if len(exports) >= self_percloss.depth:
+                break
 
         return exports
 
@@ -657,3 +711,7 @@ class SquezzeAndExcitation(torch.nn.Module):
 
 def tensor_contains_nan(x: torch.Tensor):
     return torch.any(torch.isnan(x))
+
+
+def ImgTensor2NdarrayShowable(x: torch.Tensor):
+    return x.cpu().numpy().transpose(0, 2, 3, 1).squeeze()
