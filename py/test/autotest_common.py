@@ -1,7 +1,7 @@
 import unittest
 import pprint
-from utilitypack.cold.util_solid import *
 from utilitypack.util_solid import *
+from utilitypack.cold.util_solid import *
 from utilitypack.util_np import *
 from utilitypack.util_cracked import *
 from utilitypack.util_windows import *

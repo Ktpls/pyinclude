@@ -1,6 +1,7 @@
 import dataclasses
 import typing
 import heapq
+import random
 import itertools
 import collections
 from .misc import ComparatorOverloadedByPred
@@ -25,7 +26,9 @@ class PIDController:
     analizerMode: bool = False
     last_error: float = dataclasses.field(default=0, init=False)
     integral: float = dataclasses.field(default=0, init=False)
-    frameData: typing.Optional[AnalizerFrameData] = dataclasses.field(default=None, init=False)
+    frameData: typing.Optional[AnalizerFrameData] = dataclasses.field(
+        default=None, init=False
+    )
 
     def update(self, error, dt=1):
         self.integral += error * dt
@@ -201,3 +204,44 @@ class TaskScheduler:
             if task.time <= t:
                 heapq.heappop(self.tasks)
                 task.action()
+
+
+@dataclasses.dataclass
+class ChannelSniffer:
+    capacity: float = 0
+    usage: float = 0
+    capacity_follow_lambda: float = 5
+    expolite_epsilon: float = 0.1
+
+    class ChannelOverloadError(Exception): ...
+
+    # inherit to override this
+    def failable(self, **kw): ...
+
+    def acquire(self, usage: float, **kw):
+        if not self.expolitable(usage):
+            raise ChannelSniffer.ChannelOverloadError
+        try:
+            r = self.failable(**kw)
+            self.usage += usage
+            if self.usage > self.capacity:
+                self.follow_usage()
+            return r
+        except ChannelSniffer.ChannelOverloadError:
+            self.follow_usage()
+            raise
+
+    def release(self, usage: float):
+        self.usage -= usage
+
+    def expolitable(self, usage: float):
+        target_usage = self.usage + usage
+        if target_usage <= self.capacity:
+            return True
+        if random.random() < self.expolite_epsilon:
+            return True
+        return False
+
+    def follow_usage(self):
+        # update capacity estimate on usage touching the limit
+        self.capacity += (self.usage - self.capacity) / self.capacity_follow_lambda
