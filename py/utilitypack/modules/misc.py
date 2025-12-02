@@ -943,6 +943,14 @@ class Stream[T](typing.Iterable[T]):
 
     class Collectors:
         @staticmethod
+        def NoCollect():
+            def deprecate_all(iterable: typing.Iterable[T]):
+                for i in iterable:
+                    ...
+
+            return deprecate_all
+
+        @staticmethod
         def _Reducer(func: typing.Callable[[T, T], T]):
             @functools.wraps(func)
             def reducer_as_collector(iterable: typing.Iterable[T]):

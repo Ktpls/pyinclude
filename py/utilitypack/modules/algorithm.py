@@ -211,7 +211,7 @@ class ChannelSniffer:
     capacity: float = 0
     usage: float = 0
     capacity_follow_lambda: float = 5
-    expolite_epsilon: float = 0.1
+    explore_epsilon: float = 0.1
 
     class ChannelOverloadError(Exception): ...
 
@@ -238,7 +238,7 @@ class ChannelSniffer:
         target_usage = self.usage + usage
         if target_usage <= self.capacity:
             return True
-        if random.random() < self.expolite_epsilon:
+        if random.random() < self.explore_epsilon:
             return True
         return False
 
