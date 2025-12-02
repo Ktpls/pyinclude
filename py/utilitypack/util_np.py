@@ -99,19 +99,6 @@ def ReLU(x):
     return np.maximum(0, x)
 
 
-def SafeExp(x):
-    x[x < LOGEPS] = LOGEPS
-    y = np.exp(x)
-    y[x < LOGEPS] = 0
-    return y
-
-
-def SafeLog(x):
-    x[x < EPS] = EPS
-    y = np.log(x)
-    return y
-
-
 def NormalizeIterableOrSingleArgToNdarray(x):
     if type(x) is np.ndarray:
         return x
@@ -124,9 +111,8 @@ class BayesEstimator:
     distributionModel: typing.Callable  # to calc P(measuredVal=B|val=A)
     logPBASum: np.ndarray = dataclasses.field(init=False, default=None)
 
-    logSumLowerLimit = -100
-
     def __post_init__(self):
+        self.xspace = self.xspace.astype(np.float32)
         self.logPBASum = np.zeros_like(self.xspace)
 
     def update(self, measuredValue: float | list[float] | np.ndarray):
@@ -135,14 +121,11 @@ class BayesEstimator:
         P_B_under_A = self.distributionModel(
             self.xspace.reshape((-1, 1)), measuredValue.reshape((1, -1))
         )
-        self.logPBASum += np.sum(SafeLog(P_B_under_A), axis=1)
+        self.logPBASum += np.sum(np.log(P_B_under_A), axis=1)
         self.logPBASum -= np.max(self.logPBASum)
-        self.logPBASum[self.logPBASum < BayesEstimator.logSumLowerLimit] = (
-            BayesEstimator.logSumLowerLimit
-        )
 
     def getPossibility(self):
-        possibility = SafeExp(self.logPBASum)
+        possibility = np.exp(self.logPBASum)
         possibility /= np.sum(possibility)
         return possibility
 

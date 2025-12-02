@@ -21,14 +21,18 @@ class DbConnectionManager:
 class DbEntityBaseMixin:
     __abstract__ = True
     id = sqlalchemy.Column(
-        sqlalchemy.String, primary_key=True, nullable=False, index=True
+        sqlalchemy.String(32), primary_key=True, nullable=False, index=True
     )
     create_time = sqlalchemy.Column(sqlalchemy.String(20), default=None)
 
     def init(self):
-        self.id = self.id or uuid.uuid4().hex
+        self.id = self.id or self.gen_id()
         self.create_time = self.create_time or self.nowtime()
         return self
+
+    @classmethod
+    def gen_id(cls):
+        return uuid.uuid4().hex
 
     @staticmethod
     def nowtime():

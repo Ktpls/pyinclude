@@ -51,8 +51,8 @@ class MassivePicturePlot:
     def isFull(self):
         return self.i > np.prod(self.plotShape)
 
-    def show(self, img_ndarray):
-        self.toNextPlot().imshow(img_ndarray)
+    def show(self, img_ndarray, **kw):
+        self.toNextPlot().imshow(img_ndarray, **kw)
 
 
 @dataclasses.dataclass

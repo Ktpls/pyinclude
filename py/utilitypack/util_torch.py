@@ -346,7 +346,7 @@ class trainpipe:
     ):
         ps = perf_statistic()
         for ep in range(epochnum):
-            print(f"Epoch {ep+1} / {epochnum}")
+            print(f"Epoch {ep} / {epochnum}")
             print("-------------------------------")
             # train
             for batch, datatuple in enumerate(dataloader):
@@ -355,6 +355,7 @@ class trainpipe:
                 ps.stop().countcycle()
                 if batch % outputperbatchnum == 0:
                     self.report_train_progress(ps, batch, len(dataloader), loss.item())
+            self.on_epoch_finish(ep, epochnum)
 
         # win32api.Beep(1000, 1000)
         print("Done!")
@@ -382,6 +383,7 @@ class trainpipe:
     def inferenceProgress(self, datatuple): ...
 
     def demo(self, *arg, **kw): ...
+    def on_epoch_finish(self, epochnum_current, epochnum_total): ...
 
 
 class ConvNormInsp(torch.nn.Module):
@@ -614,12 +616,45 @@ class PerceptualLoss:
         self,
         device: typing.Optional[str] = None,
         use_existed_weight: typing.Optional[str] = None,
-        depth: int = 4,
+        depth: int = None,
     ):
         self.device = device
         self.use_existed_weight = use_existed_weight
         self.model = self.get_model().requires_grad_(False).eval().to(self.device)
-        self.depth = depth
+        self.depth = depth or 999
+
+    def get_model(self) -> torch.nn.Module: ...
+
+    def exported_forward(self_percloss, self: torch.nn.Module, x: torch.Tensor): ...
+
+    def __call__(self, x: torch.Tensor, xpred: torch.Tensor):
+
+        model = self.model
+        # 提取特征
+        with torch.no_grad():
+            lfeat_x = self.exported_forward(model, x)
+        lfeat_xpred = self.exported_forward(model, xpred)
+        loss_perc = torch.mean(
+            Stream(zip(lfeat_x, lfeat_xpred))
+            .map(lambda feat_x, feat_xpred: torch.mean((feat_x - feat_xpred) ** 2))
+            .collect(sum)
+        )
+
+        # 返回加权总损失
+        return loss_perc
+
+    def foward_gray(self, x: torch.Tensor, xpred: torch.Tensor):
+        return self(x.repeat(1, 3, 1, 1), xpred.repeat(1, 3, 1, 1))
+
+
+class PerceptualLossResnet(PerceptualLoss):
+    def __init__(
+        self,
+        device: typing.Optional[str] = None,
+        use_existed_weight: typing.Optional[str] = None,
+        depth: int = 4,
+    ):
+        super().__init__(device, use_existed_weight, depth)
 
     def get_model(self):
         if self.use_existed_weight:
@@ -674,22 +709,6 @@ class PerceptualLoss:
                 break
 
         return exports
-
-    def __call__(self, x: torch.Tensor, xpred: torch.Tensor):
-
-        model = self.model
-        # 提取特征
-        with torch.no_grad():
-            lfeat_x = self.exported_forward(model, x)
-        lfeat_xpred = self.exported_forward(model, xpred)
-        loss_perc = torch.mean(
-            Stream(zip(lfeat_x, lfeat_xpred))
-            .map(lambda feat_x, feat_xpred: torch.mean((feat_x - feat_xpred) ** 2))
-            .collect(sum)
-        )
-
-        # 返回加权总损失
-        return loss_perc
 
 
 class SquezzeAndExcitation(torch.nn.Module):
