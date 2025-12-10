@@ -7,6 +7,7 @@ import os
 import random
 import torchvision
 from .util_solid import perf_statistic, GetTimeString, Stream, EnsureFileDirExists
+import re
 
 
 def getTorchDevice():
@@ -491,9 +492,13 @@ class GlobalAvgPooling(torch.nn.Module):
         return GlobalAvgPooling.static_forward(x)
 
 
-def setModuleFree(backbone: torch.nn.Module, freeLayers: typing.Iterable):
+def setModuleFree(
+    backbone: torch.nn.Module,
+    freeLayers: typing.Iterable[re.Pattern]=None,
+):
+    freeLayers=freeLayers or []
     for name, param in backbone.named_parameters():
-        if any([name.startswith(fl) for fl in freeLayers]):
+        if any(fl.match(name) for fl in freeLayers):
             param.requires_grad = True
         else:
             param.requires_grad = False

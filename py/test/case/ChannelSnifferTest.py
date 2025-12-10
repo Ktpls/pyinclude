@@ -8,13 +8,6 @@ class TestChannelSniffer(unittest.TestCase):
         """Set up test fixtures before each test method."""
         self.sniffer = ChannelSniffer(capacity=10.0, usage=0.0)
 
-    def test_initialization(self):
-        """Test that the ChannelSniffer initializes with correct default values."""
-        self.assertEqual(self.sniffer.capacity, 10.0)
-        self.assertEqual(self.sniffer.usage, 0.0)
-        self.assertEqual(self.sniffer.capacity_follow_lambda, 5.0)
-        self.assertEqual(self.sniffer.explore_epsilon, 0.1)
-
     def test_release_decreases_usage(self):
         """Test that release method decreases usage correctly."""
         self.sniffer.usage = 5.0

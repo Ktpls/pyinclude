@@ -1382,6 +1382,25 @@ class Stream[T](typing.Iterable[T]):
     def skip(self, n: int) -> typing.Self:
         return self.clone(itertools.islice(self._stream, n, None))
 
+    def catch_exception[R](
+        self,
+        exception_class_or_tuple: type[BaseException] | tuple[type[BaseException]],
+        func: typing.Callable[[T, BaseException], R],
+    ) -> Stream[T | R]:
+        def deal_ecxception(stream):
+            while True:
+                try:
+                    r = next(stream)
+                except BaseException as e:
+                    if isinstance(e, exception_class_or_tuple):
+                        r = func(e)
+                    else:
+                        # StopIteration raises here if not captured
+                        raise
+                yield r
+
+        return self.wrap_iterator(deal_ecxception)
+
     @typing.overload
     def min[*Ts, V](
         self: Stream[tuple[*Ts]],

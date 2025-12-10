@@ -216,13 +216,13 @@ class ChannelSniffer:
     class ChannelOverloadError(Exception): ...
 
     # inherit to override this
-    def failable(self, **kw): ...
+    def failable(self, *a, **kw): ...
 
-    def acquire(self, usage: float, **kw):
+    def acquire(self, usage: float, *a, **kw):
         if not self.expolitable(usage):
             raise ChannelSniffer.ChannelOverloadError
         try:
-            r = self.failable(**kw)
+            r = self.failable(*a, **kw)
             self.usage += usage
             if self.usage > self.capacity:
                 self.follow_usage()
