@@ -494,9 +494,9 @@ class GlobalAvgPooling(torch.nn.Module):
 
 def setModuleFree(
     backbone: torch.nn.Module,
-    freeLayers: typing.Iterable[re.Pattern]=None,
+    freeLayers: typing.Iterable[re.Pattern] = None,
 ):
-    freeLayers=freeLayers or []
+    freeLayers = freeLayers or []
     for name, param in backbone.named_parameters():
         if any(fl.match(name) for fl in freeLayers):
             param.requires_grad = True
@@ -537,6 +537,7 @@ class FinalModule(torch.nn.Module):
 
     def save(self, path):
         savemodel(self, path)
+        savemodel(self, f"{path}.{self.opt_step}.ckpt")
 
 
 class MPn(torch.nn.Module):
@@ -617,29 +618,32 @@ class Deterministic:
 
 
 class PerceptualLoss:
+    def get_allowed_export_pos(self) -> set: ...
+    def get_model(self) -> torch.nn.Module: ...
+    def exported_forward(self_percloss, self: torch.nn.Module, x: torch.Tensor): ...
     def __init__(
         self,
+        export_pos: set = None,
         device: typing.Optional[str] = None,
         use_existed_weight: typing.Optional[str] = None,
-        depth: int = None,
     ):
         self.device = device
         self.use_existed_weight = use_existed_weight
         self.model = self.get_model().requires_grad_(False).eval().to(self.device)
-        self.depth = depth or 999
+        self.export_pos = export_pos or set()
+        self.check_export_pos_available()
 
-    def get_model(self) -> torch.nn.Module: ...
-
-    def exported_forward(self_percloss, self: torch.nn.Module, x: torch.Tensor): ...
+    def check_export_pos_available(self):
+        allowed_export_pos = self.get_allowed_export_pos()
+        assert Stream(self.export_pos).all_match(lambda x: x in allowed_export_pos)
 
     def __call__(self, x: torch.Tensor, xpred: torch.Tensor):
-
         model = self.model
         # 提取特征
         with torch.no_grad():
             lfeat_x = self.exported_forward(model, x)
         lfeat_xpred = self.exported_forward(model, xpred)
-        loss_perc = torch.mean(
+        loss_perc = (
             Stream(zip(lfeat_x, lfeat_xpred))
             .map(lambda feat_x, feat_xpred: torch.mean((feat_x - feat_xpred) ** 2))
             .collect(sum)
@@ -651,15 +655,23 @@ class PerceptualLoss:
     def foward_gray(self, x: torch.Tensor, xpred: torch.Tensor):
         return self(x.repeat(1, 3, 1, 1), xpred.repeat(1, 3, 1, 1))
 
+    def exportably_forward_sequential(self, seq: torch.nn.Sequential, x: torch.Tensor):
+        exports: list[torch.Tensor] = []
+        max_depth = max(self.export_pos)
+        for ifeat, module in enumerate(seq):
+            if ifeat > max_depth:
+                break
+            x = module(x)
+            ifeat in self.export_pos and exports.append(x)
+        return exports
+
+    def _view_model_structure(self, file=None):
+        print(ModuleArgDistribution(self.model, OnlyWithGrad=False), file=file)
+
 
 class PerceptualLossResnet(PerceptualLoss):
-    def __init__(
-        self,
-        device: typing.Optional[str] = None,
-        use_existed_weight: typing.Optional[str] = None,
-        depth: int = 4,
-    ):
-        super().__init__(device, use_existed_weight, depth)
+    def get_allowed_export_pos(self):
+        return set(range(6))
 
     def get_model(self):
         if self.use_existed_weight:
@@ -679,39 +691,43 @@ class PerceptualLossResnet(PerceptualLoss):
     ):
         """使用resnet的前几层提取特征进行损失计算"""
         # See torchvision\models\resnet.py:ResNet._forward_impl
+        max_depth = max(self_percloss.export_layers)
         exports = []
         while True:
             x = self.conv1(x)
             x = self.bn1(x)
             x = self.relu(x)
             x = self.maxpool(x)
-            exports.append(x)
-            if len(exports) >= self_percloss.depth:
+
+            0 in self_percloss.export_layers and exports.append(x)
+            if len(exports) >= max_depth:
                 break
 
             x = self.layer1(x)
-            exports.append(x)
-            if len(exports) >= self_percloss.depth:
+            1 in self_percloss.export_layers and exports.append(x)
+            if len(exports) >= max_depth:
                 break
             x = self.layer2(x)
-            exports.append(x)
-            if len(exports) >= self_percloss.depth:
+            2 in self_percloss.export_layers and exports.append(x)
+            if len(exports) >= max_depth:
                 break
             x = self.layer3(x)
-            exports.append(x)
-            if len(exports) >= self_percloss.depth:
+            3 in self_percloss.export_layers and exports.append(x)
+            if len(exports) >= max_depth:
                 break
             x = self.layer4(x)
-            exports.append(x)
-            if len(exports) >= self_percloss.depth:
+            4 in self_percloss.export_layers and exports.append(x)
+            if len(exports) >= max_depth:
                 break
 
             x = self.avgpool(x)
             x = torch.flatten(x, 1)
             x = self.fc(x)
-            exports.append(x)
-            if len(exports) >= self_percloss.depth:
+            5 in self_percloss.export_layers and exports.append(x)
+            if len(exports) >= max_depth:
                 break
+
+            break
 
         return exports
 

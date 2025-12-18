@@ -11,6 +11,8 @@ from utilitypack.util_solid import (
 import types
 from utilitypack.cold.util_solid import DistillLibraryFromDependency
 import typing
+import dataclasses
+import pathlib
 
 
 class DockerBuilder:
@@ -144,14 +146,24 @@ class DockerBuilder:
 
     NORMAL_HASH_COMMENTED_FILE = "normal_hash_commented_file"
 
-    def preproc_pd(self, files: list[str | tuple[str, str]], pdenv: dict = None):
+    @dataclasses.dataclass
+    class PreprocPdFile:
+        path: str
+        ext: str = None
+        target: str = None
+
+    def preproc_pd(
+        self,
+        files: list[str | PreprocPdFile],
+        pdenv: dict = None,
+    ):
         """
         预处理PowerDefine模板文件
 
         Args:
             files: 需要处理的文件列表，支持两种格式：
                 - str: 文件路径 (自动提取扩展名)
-                - tuple[str, str]: (文件路径, 指定扩展名)
+                - tuple[typing.Optional[str], typing.Optional[str], typing.Optional[str]]: (文件路径, 指定扩展名, 保存路径)
                 支持扩展名: yaml/yml/py/c/cpp/asm
                 示例: ["config.yml", ("src/main", "c"), "kernel.asm"]
 
@@ -167,6 +179,7 @@ class DockerBuilder:
             - 使用UrlFullResolution解析文件路径
         """
         from powerDefine import (
+            PowerDefineFrontEnd,
             YamlFrontEnd,
             NormalHashCommentFrontEnd,
             PythonFrontEnd,
@@ -176,7 +189,7 @@ class DockerBuilder:
             PowerDefineEnviroment,
         )
 
-        front_end_mapping = {
+        front_end_mapping: dict[str, type[PowerDefineFrontEnd]] = {
             "yaml": YamlFrontEnd,
             "yml": YamlFrontEnd,
             self.NORMAL_HASH_COMMENTED_FILE: NormalHashCommentFrontEnd,
@@ -186,20 +199,22 @@ class DockerBuilder:
             "asm": AsmFrontEnd,
         }
         for p in files:
-            if isinstance(p, (tuple, list)) and len(p) == 2:
-                p, extName = p
-            else:
-                extName = os.path.splitext(p)[1][1:].lower()
+            # normalize path parameters
+            if isinstance(p, str):
+                p = DockerBuilder.PreprocPdFile(path=p)
             try:
-                assert extName in front_end_mapping
-                pd_cwd = UrlFullResolution.of(p).folder
+                path = p.path
+                ext_name = p.ext or pathlib.Path(path).suffix[1:]
+                target = p.target or path
+                assert ext_name in front_end_mapping
+                pd_cwd = UrlFullResolution.of(path).folder
                 pde = PowerDefineEnviroment(env=pdenv, cwd=pd_cwd)
                 pdbp = PowerDefineBlockParser(pde)
-                fe = front_end_mapping[extName](pdbp)
-                s = ReadTextFile(p)
+                fe = front_end_mapping[ext_name](pdbp)
+                s = ReadTextFile(path)
                 s = fe.preproc(s)
-                WriteTextFile(p, s)
-                print(f"File edited: {p}")
+                WriteTextFile(target, s)
+                print(f"File edited: {path}")
             except Exception as e:
                 raise Exception(f"Preproc file failed: {p}") from e
         return self
