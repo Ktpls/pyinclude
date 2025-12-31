@@ -611,7 +611,7 @@ try:
                 )
                 # delta = np.max(np.std(prevsignal, axis=0), axis=-1)
                 ret = self.filter(delta)
-            self.mtiQueue.push__pop_if_full(MtiFilter.MtiFrame(img, cammotion))
+            self.mtiQueue.push_and_optionally_pop_if_full(MtiFilter.MtiFrame(img, cammotion))
             return ret
 
 except ImportError:

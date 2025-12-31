@@ -503,31 +503,28 @@ class Switch:
 
     onSetOn: typing.Optional[typing.Callable[[], None]] = None
     onSetOff: typing.Optional[typing.Callable[[], None]] = None
-    initial: bool = False
+    value: bool = False
     skipRespondingOnStateUnchanged: bool = True
     """
     skipRespondingOnStateUnchanged
         if true, onSetOn/onSetOff wont be called on calling on/off if its already in that on/off state
     """
 
-    def __post_init__(self):
-        self.__value = self.initial
-
     def on(self):
         if self.onSetOn is not None:
-            if self.__value == True and self.skipRespondingOnStateUnchanged:
+            if self.value == True and self.skipRespondingOnStateUnchanged:
                 pass
             else:
                 self.onSetOn()
-        self.__value = True
+        self.value = True
 
     def off(self):
         if self.onSetOff is not None:
-            if self.__value == False and self.skipRespondingOnStateUnchanged:
+            if self.value == False and self.skipRespondingOnStateUnchanged:
                 pass
             else:
                 self.onSetOff()
-        self.__value = False
+        self.value = False
 
     def setTo(self, val: bool):
         if val:
@@ -542,7 +539,7 @@ class Switch:
             self.on()
 
     def __call__(self) -> bool:
-        return self.__value
+        return self.value
 
 
 # @EasyWrapper
@@ -607,7 +604,7 @@ class DictAsAnObject:
 
 class AnnotationUtil:
     @staticmethod
-    def __checkAnnoNonexisted(obj):
+    def _checkAnnoNonexisted(obj):
         return not hasattr(obj, "__ExtraAnnotations__")
 
     @staticmethod
@@ -618,14 +615,14 @@ class AnnotationUtil:
     @staticmethod
     @EasyWrapper
     def AnnotationWithAnyKeyType(obj, annoDict: dict):
-        if AnnotationUtil.__checkAnnoNonexisted(obj):
+        if AnnotationUtil._checkAnnoNonexisted(obj):
             obj.__ExtraAnnotations__ = dict()
         obj.__ExtraAnnotations__.update(annoDict)
         return obj
 
     @staticmethod
     def getAnnotationDict(obj):
-        if AnnotationUtil.__checkAnnoNonexisted(obj):
+        if AnnotationUtil._checkAnnoNonexisted(obj):
             return dict()
         return obj.__ExtraAnnotations__
 
@@ -657,36 +654,36 @@ class Cache:
         @dataclasses.dataclass
         class Outdated(UpdateStrategyBase):
             outdatedTime: float
-            __lastUpdateTime: typing.Optional[float] = dataclasses.field(
+            _lastUpdateTime: typing.Optional[float] = dataclasses.field(
                 init=False, default=None
             )
 
             def test(self, cache: "Cache"):
-                if self.__lastUpdateTime is None:
+                if self._lastUpdateTime is None:
                     return True
-                return time.perf_counter() - self.__lastUpdateTime > self.outdatedTime
+                return time.perf_counter() - self._lastUpdateTime > self.outdatedTime
 
             def onUpdated(self, cache: "Cache"):
-                self.__lastUpdateTime = time.perf_counter()
+                self._lastUpdateTime = time.perf_counter()
 
         @dataclasses.dataclass
         class Invalid(UpdateStrategyBase):
             isValid: typing.Callable[[typing.Any], bool]
 
             def test(self, cache: "Cache"):
-                return self.isValid(cache.__val)
+                return self.isValid(cache._val)
 
     def __init__(
         self,
         toFetch,
         updateStrategy: "Cache.UpdateStrategy.UpdateStrategyBase | list[Cache.UpdateStrategy.UpdateStrategyBase]",
     ):
-        self.__toFetch = toFetch
+        self._toFetch = toFetch
         self.updateStrategy = NormalizeIterableOrSingleArgToIterable(updateStrategy)
-        self.__val = None
+        self._val = None
 
     def update(self):
-        self.__val = self.__toFetch()
+        self._val = self._toFetch()
         for u in self.updateStrategy:
             u.onUpdated(self)
 
@@ -695,7 +692,7 @@ class Cache:
             newest = False
         if newest or any([u.test(self) for u in self.updateStrategy]):
             self.update()
-        return self.__val
+        return self._val
 
 
 @EasyWrapper
@@ -1800,7 +1797,7 @@ class SingletonIsolation:
 class SingletonContextIsolation(SingletonIsolation):
     _inst_dict: contextvars.ContextVar[
         dict[type[SingletonIsolation], SingletonIsolation]
-    ] = contextvars.ContextVar("__inst_dict")
+    ] = contextvars.ContextVar("_inst_dict")
 
     @classmethod
     def get_instance(cls):

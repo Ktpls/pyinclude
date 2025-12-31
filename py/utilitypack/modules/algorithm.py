@@ -94,7 +94,7 @@ class AccessibleQueue:
         self._cursize -= 1
         return val
 
-    def push__pop_if_full(self, val):
+    def push_and_optionally_pop_if_full(self, val):
         if self.isFull():
             self.pop()
         self.push(val)
@@ -116,7 +116,7 @@ class AccessibleQueue:
 
         self._maxsize = newsize
 
-    def __indexMapping(self, i):
+    def _indexMapping(self, i):
         if i < 0:
             i = self._cursize + i
         return (i + self._sptr) % self._maxsize
@@ -134,7 +134,7 @@ class AccessibleQueue:
         if isinstance(i, int):
             if i >= self._cursize:
                 raise AccessibleQueue.AQException("index out of range")
-            return self._q[self.__indexMapping(i)]
+            return self._q[self._indexMapping(i)]
         elif isinstance(i, slice):
             return [
                 self[j]

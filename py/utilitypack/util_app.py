@@ -89,7 +89,7 @@ class HotkeyManager:
             self.key = HotkeyManager.hotkeytask.formalize_key_param(self.key)
             # self.key is like [keyset1=[key1, key2], keyset2=[key3, key4]]
             self._switch = Switch(
-                onSetOn=self.onKeyDown, onSetOff=self.onKeyUp, initial=False
+                onSetOn=self.onKeyDown, onSetOff=self.onKeyUp, value=False
             )
 
         @staticmethod
@@ -116,12 +116,12 @@ class HotkeyManager:
         keyconcerned = Deduplicate(ArrayFlatten([hkt.key for hkt in hktl]))
         self.kc = [HotkeyManager.Key(k) for k in keyconcerned]
         self.hktl = hktl
-        self.__calcPriorInfo()
+        self._calcPriorInfo()
 
         # clear all previous state
         self._getKeyConcernedState()
 
-    def __calcPriorInfo(self):
+    def _calcPriorInfo(self):
         """
         costly!!!
         at m^2n^2, where m is #hotkeytask, n is #key of hotkeytask
@@ -238,7 +238,7 @@ class HotkeyManager:
             NUMBER = 0
             LETTER = 1
 
-        def __GetHotkeyReg(self, ite: list[InputTypeEnabled]):
+        def _GetHotkeyReg(self, ite: list[InputTypeEnabled]):
             @dataclasses.dataclass
             class KeyMapping:
                 char: str
@@ -331,7 +331,7 @@ class HotkeyManager:
                     HotkeyManager.InputSession.InputTypeEnabled.NUMBER,
                     HotkeyManager.InputSession.InputTypeEnabled.LETTER,
                 ]
-            inputer = HotkeyManager(self.__GetHotkeyReg(allowedInputType))
+            inputer = HotkeyManager(self._GetHotkeyReg(allowedInputType))
             old = self.FooSwapHKM(inputer)
             self.hotkeymanagerStack.append(old)
 

@@ -508,7 +508,7 @@ class Rhythms:
 
 class WifiRefresher:
     @staticmethod
-    def __getNowWlanProfileName():
+    def _getNowWlanProfileName():
         output = subprocess.check_output("netsh wlan show interface", shell=True)
         output = output.decode("utf8")
         m = regex.findall(
@@ -518,7 +518,7 @@ class WifiRefresher:
         return m[0]
 
     def __init__(self):
-        self.name = WifiRefresher.__getNowWlanProfileName()
+        self.name = WifiRefresher._getNowWlanProfileName()
 
     def setOn(self):
         subprocess.Popen(f'netsh wlan connect name="{self.name}"')

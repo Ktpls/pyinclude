@@ -75,12 +75,12 @@ class ZFunc:
         self.slope = (ptright[1] - ptleft[1]) / (ptright[0] - ptleft[0])
         self.bias = ptleft[1] - self.slope * ptleft[0]
 
-    def __CallOnNDArray(self, x: np.ndarray):
+    def _CallOnNDArray(self, x: np.ndarray):
         y = self.slope * x + self.bias
         y = np.clip(y, self.yminmax[0], self.yminmax[1])
         return y
 
-    def __CallOnNum(self, x):
+    def _CallOnNum(self, x):
         y = self.slope * x + self.bias
         if y < self.yminmax[0]:
             y = self.yminmax[0]
@@ -90,9 +90,9 @@ class ZFunc:
 
     def __call__(self, x):
         if type(x) is np.ndarray:
-            return self.__CallOnNDArray(x)
+            return self._CallOnNDArray(x)
         else:
-            return self.__CallOnNum(x)
+            return self._CallOnNum(x)
 
 
 def ReLU(x):

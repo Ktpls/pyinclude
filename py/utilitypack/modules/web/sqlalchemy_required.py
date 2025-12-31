@@ -1,6 +1,7 @@
 import sqlalchemy, sqlalchemy.orm
 import time
 import uuid
+import typing
 
 
 class DbConnectionManager:
@@ -52,9 +53,27 @@ class DbEntityBaseMixin:
         return sqlalchemy.inspect(self).mapper.column_attrs
 
     @classmethod
-    def from_dict(cls, data, move_from=None):
+    def from_dict(cls, data, move_from: typing.Self = None):
         """Convert SQLAlchemy model to dictionary for JSON serialization"""
         ret = move_from or cls()
         for column in cls.iter_columns():
-            setattr(ret, column.key, data.get(column.key) or getattr(ret, column.key))
+            if (val := data.get(column.key)) is not None:
+                setattr(ret, column.key, val)
         return ret
+
+
+def execute_sql(
+    db_session: sqlalchemy.orm.Session,
+    str_sql: str,
+    params=None,
+    afterproc_on_sql: typing.Optional[
+        typing.Callable[[sqlalchemy.TextClause], sqlalchemy.TextClause]
+    ] = None,
+):
+    sql_text = sqlalchemy.text(str_sql)
+    if afterproc_on_sql:
+        sql_text = afterproc_on_sql(sql_text)
+    return db_session.execute(
+        sql_text,
+        params,
+    ).mappings()

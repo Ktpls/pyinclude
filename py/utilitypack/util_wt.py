@@ -384,7 +384,7 @@ class Port8111:
         hudmsg = 3
 
         @staticmethod
-        def __throwEnumNotFound():
+        def _throwEnumNotFound():
             raise Exception("enum not found")
 
         def getPath(self):
@@ -396,7 +396,7 @@ class Port8111:
                 return "state"
             elif self == self.hudmsg:
                 return "hudmsg"
-            Port8111.QueryType.__throwEnumNotFound()
+            Port8111.QueryType._throwEnumNotFound()
             return ""
 
         def parseJson(self, json_obj):
@@ -411,14 +411,14 @@ class Port8111:
                     return BeanUtil.copyProperties(json_obj, Port8111.BeanIndicatorAir)
                 elif army == "tank":
                     return BeanUtil.copyProperties(json_obj, Port8111.BeanIndicatorTank)
-                Port8111.QueryType.__throwEnumNotFound()
+                Port8111.QueryType._throwEnumNotFound()
             elif self == self.map_info:
                 return BeanUtil.copyProperties(json_obj, Port8111.BeanMapInfo)
             elif self == self.state:
                 return Port8111.BeanState.fromDict(json_obj)
             elif self == self.hudmsg:
                 return Port8111.BeanHudMsg.fromDict(json_obj)
-            Port8111.QueryType.__throwEnumNotFound()
+            Port8111.QueryType._throwEnumNotFound()
 
     @staticmethod
     def get_raw_json(queryType: "Port8111.QueryType", param=None, timeout=None):
