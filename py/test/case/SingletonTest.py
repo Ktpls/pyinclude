@@ -120,3 +120,45 @@ class SingletonTest(unittest.TestCase):
         self.assertTrue(results["b_same_context"])
         self.assertTrue(results["a_diff_context"])
         self.assertTrue(results["b_diff_context"])
+
+    def test_async_isolation(self):
+        class A(SingletonContextIsolation): ...
+
+        class B(A): ...
+
+        async def main():
+            import contextvars
+
+            # 在主异步上下文中获取实例
+            a1 = A.get_instance()
+            a2 = A.get_instance()
+            self.assertTrue(a1 is a2)
+            b1 = B.get_instance()
+            self.assertTrue(b1 is not a1)
+
+            # 结果存储用于从另一个异步任务返回数据
+            results = {}
+
+            async def worker():
+                # 在新的异步任务中获取实例
+                at = A.get_instance()
+                bt = B.get_instance()
+
+                # 验证异步任务隔离：不同任务应该有不同的实例
+                results["a_same_task"] = at is A.get_instance()
+                results["b_same_task"] = bt is B.get_instance()
+                results["a_diff_task"] = at is not a1
+                results["b_diff_task"] = bt is not b1
+
+            # 创建新任务并运行
+            ctx = contextvars.Context()
+            task = asyncio.create_task(worker(), context=ctx)
+            await task
+
+            # 检查结果
+            self.assertTrue(results["a_same_task"])
+            self.assertTrue(results["b_same_task"])
+            self.assertTrue(results["a_diff_task"])
+            self.assertTrue(results["b_diff_task"])
+
+        asyncio.run(main())

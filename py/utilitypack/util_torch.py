@@ -428,8 +428,19 @@ class ConvNormInsp(torch.nn.Module):
 
 
 class ConvGnRelu(ConvNormInsp):
-    def get_norm(self, out_channels, numGroup=4, **kw):
+    def get_norm(self, out_channels, numGroup=None, **kw):
+        numGroup = (
+            numGroup or (4 if out_channels >= 16 else 2 if out_channels >= 8 else 1)
+        )
         return torch.nn.GroupNorm(numGroup, out_channels)
+
+    def get_insp(self, **kw):
+        return torch.nn.LeakyReLU()
+
+
+class ConvLnRelu(ConvNormInsp):
+    def get_norm(self, out_channels, normalized_shape, **kw):
+        return torch.nn.LayerNorm(normalized_shape, out_channels)
 
     def get_insp(self, **kw):
         return torch.nn.LeakyReLU()
