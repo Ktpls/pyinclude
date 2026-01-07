@@ -1,6 +1,7 @@
 import typing
 import os
 import zipfile
+import re
 
 
 def AllFileIn(
@@ -66,3 +67,13 @@ def ReadFileInZip(zipf, filename: str | list[str] | tuple[str]):
     if singleFile:
         return file[0]
     return file
+
+
+def make_filename_safe(filename):
+    # Remove any characters that are not allowed in a filename
+    filename = re.sub(r'[<>:"/\\|?*\r\n]', "_", filename)
+
+    # Replace any consecutive invalid characters with a single underscore
+    # filename = re.sub(r'(.)\1+', r'\1', filename)
+
+    return filename

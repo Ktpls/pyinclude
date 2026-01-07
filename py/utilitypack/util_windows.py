@@ -13,7 +13,6 @@ import ctypes
 import sys
 import threading
 import time
-import re
 import dataclasses
 import typing
 
@@ -529,13 +528,3 @@ class WifiRefresher:
 
     def setOff(self):
         subprocess.Popen(f"netsh wlan disconnect")
-
-
-def make_filename_safe(filename):
-    # Remove any characters that are not allowed in a filename
-    filename = re.sub(r'[<>:"/\\|?*\r\n]', "_", filename)
-
-    # Replace any consecutive invalid characters with a single underscore
-    # filename = re.sub(r'(.)\1+', r'\1', filename)
-
-    return filename
