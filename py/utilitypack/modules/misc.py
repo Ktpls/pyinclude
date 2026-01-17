@@ -1207,20 +1207,21 @@ class Stream[T](typing.Iterable[T]):
     @typing.overload
     def filter[*Ts](
         self: Stream[tuple[*Ts]],
-        func: typing.Callable[[*Ts], bool],
+        func: typing.Callable[[*Ts], bool] = None,
         pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     @typing.overload
     def filter(
         self,
-        func: typing.Callable[[T], bool],
+        func: typing.Callable[[T], bool] = None,
         pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self: ...
     def filter(
         self,
-        func: typing.Callable[[T], bool],
+        func: typing.Callable[[T], bool] = None,
         pred_option: Stream.PredProcessOption = None,
     ) -> typing.Self:
+        func = func or IdentityMapping
         func = self._processed_pred(func, pred_option=pred_option)
         return self.clone(filter(func, self._stream))
 
