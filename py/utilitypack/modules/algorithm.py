@@ -245,3 +245,13 @@ class ChannelSniffer:
     def follow_usage(self):
         # update capacity estimate on usage touching the limit
         self.capacity += (self.usage - self.capacity) / self.capacity_follow_lambda
+
+
+def in_polygon(p: tuple[float, float], poly: list[tuple[float, float]]):
+    y = p[1]
+    inside = False
+    for beg, end in zip(poly, [*poly[1:], poly[0]]):
+        if beg[1] < y <= end[1]:
+            if (end[0] - beg[0]) / (end[1] - beg[1]) * (y - beg[1]) + beg[0] > p[0]:
+                inside = not inside
+    return inside

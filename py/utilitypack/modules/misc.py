@@ -939,63 +939,46 @@ class Stream[T](typing.Iterable[T]):
     annotations.__init__
 
     class Collectors:
-        @staticmethod
-        def NoCollect():
-            def deprecate_all(iterable: typing.Iterable[T]):
-                for i in iterable:
+        class BaseCollector[R]:
+            def __call__(self, stream: Stream[T]) -> R: ...
+
+        class Deprecate(BaseCollector[None]):
+            def __call__(self, stream):
+                for i in stream:
                     ...
 
-            return deprecate_all
+        class Reducer(BaseCollector[T]):
+            func: typing.Callable[[T, T], T]
 
-        @staticmethod
-        def _Reducer(func: typing.Callable[[T, T], T]):
-            @functools.wraps(func)
-            def reducer_as_collector(iterable: typing.Iterable[T]):
-                return Stream(iterable).reduce(func)
+            def __call__(self, iterable: typing.Iterable[T]):
+                return Stream(iterable).reduce(self.func)
 
-            return reducer_as_collector
+        class OneByOneCollector[R](BaseCollector[R]):
+            func: typing.Callable[[typing.Self, R, T], R]
+            initial: R = None
+            initial_func: typing.Optional[typing.Callable[[typing.Self], R]] = None
 
-        @staticmethod
-        @EasyWrapper
-        def OneByOneCollector[R](
-            func: typing.Callable[[R, T], R],
-            initial: R = None,
-            initial_func: typing.Optional[typing.Callable[[], R]] = None,
-        ) -> typing.Callable[[typing.Iterable[T]], R]:
-            @functools.wraps(func)
-            def reducer_as_collector(iterable: typing.Iterable[T]):
-                val = initial or (initial_func and initial_func())
+            def __call__(self, iterable: typing.Iterable[T]):
+                val = self.initial_func() if self.initial_func else self.initial
                 for i in iterable:
-                    val = func(val, i)
+                    val = self.func(val, i)
                 return val
 
-            return reducer_as_collector
-
-        @staticmethod
-        @EasyWrapper
-        def _OneByOneCollectorAsync[R](
-            func: typing.Callable[
-                [R, T], types.CoroutineType[typing.Any, typing.Any, R]
-            ],
-            initial: R = None,
-            initial_func: typing.Optional[typing.Callable[[], R]] = None,
-        ):
-            @functools.wraps(func)
-            async def reducer_as_collector(
+        class OneByOneCollectorAsync[R](OneByOneCollector[R]):
+            async def __call__(
+                self,
                 iterable: typing.Iterable[
                     types.CoroutineType[typing.Any, typing.Any, T]
                 ],
             ):
-                val = initial or (initial_func and initial_func())
+                val = self.initial or (self.initial_func and self.initial_func())
                 if isinstance(iterable, types.AsyncGeneratorType):
                     async for i in iterable:
-                        val = await func(val, i)
+                        val = await self.func(val, i)
                 else:
                     for i in iterable:
-                        val = await func(val, i)
+                        val = await self.func(val, i)
                 return val
-
-            return reducer_as_collector
 
         @staticmethod
         def join(separator: str = ""):
@@ -1011,32 +994,39 @@ class Stream[T](typing.Iterable[T]):
         set = set
         set_union = lambda x: set().union(x)
 
-        @staticmethod
-        def dict_union[K, V]():
-            def _(x: typing.Iterable[dict[K, V]]):
-                r = {}
-                for i in x:
-                    r.update(i)
-                return r
+        class DictUnion[K, V](OneByOneCollector[dict[K, V]]):
+            initial_func = dict
 
-            return _
+            def func(self, d: dict[K, V], v: V):
+                d.update(v)
+                return d
 
-        @staticmethod
-        def stringIo() -> typing.Callable[[typing.Iterable[str]], io.StringIO]:
-            @Stream.Collectors.OneByOneCollector(initial_func=io.StringIO)
-            def collector(buf: io.StringIO, x: str):
+        class StringIo[K, V](OneByOneCollector[dict[K, V]]):
+            initial_func = io.StringIO
+
+            def func(self, buf: io.StringIO, x: str):
                 buf.write(x)
                 return buf
 
-            return collector
+        class print(OneByOneCollector[None]):
+            def __init__(self, *a, **kw):
+                super().__init__()
+                self.a, self.kw = a, kw
 
-        @staticmethod
-        def print(*a, **kw) -> typing.Callable[[typing.Iterable[str]], None]:
-            @Stream.Collectors.OneByOneCollector()
-            def collector(buf: None, x: str):
-                print(x, *a, **kw)
+            def func(self, buf: None, x: str):
+                print(x, *self.a, **self.kw)
 
-            return collector
+        class sum(OneByOneCollector[T]):
+            initial = 0
+
+            def func(self, buf: T, x: T):
+                return buf + x
+
+        class product(OneByOneCollector[T]):
+            initial = 1
+
+            def func(self, buf: T, x: T):
+                return buf * x
 
     @dataclasses.dataclass
     class PredProcessOption(UnionableClass):
