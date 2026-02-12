@@ -148,7 +148,7 @@ class expparser:
     regex_str = r'"(?<content>.*?)(?<=[^\\]|\\\\)"'
     matchers = [
         # comment "/" out priored the operator "/"
-        FSMUtil.RegexpTokenMatcher(exp=r"^//.+?\n", type=_TokenType.COMMENT),
+        FSMUtil.RegexpTokenMatcher(exp=r"^//.+?(?:\n|$)", type=_TokenType.COMMENT),
         FSMUtil.RegexpTokenMatcher(exp=r"^/\*.+?\*/", type=_TokenType.COMMENT),
         FSMUtil.RegexpTokenMatcher(
             exp=r"^(<=)|(>=)|(\^\^)|(!=)|(==)", type=_TokenType.OPR

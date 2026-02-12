@@ -352,7 +352,7 @@ class DistillLibraryFromDependency:
                     Stream(self._follow_up_stack())
                     .reversed()
                     .map(lambda x: x.cur_frame_newly_defined)
-                    .collect(Stream.Collectors.dict_union())
+                    .collect(Stream.Collectors.DictUnion())
                 )
                 return self
 

@@ -94,6 +94,12 @@ class ExpParseTest(unittest.TestCase):
             2.0,
         )
 
+    def test_line_comment_ending_wih_eos(self):
+        self.assertEqual(
+            self.expparseWithEnv(r"""1//comment one"""),
+            1.0,
+        )
+
     def test_scientific_number(self):
         self.assertAlmostEqual(
             self.expparseWithEnv("1.1e-1"),

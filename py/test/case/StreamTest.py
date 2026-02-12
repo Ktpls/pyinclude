@@ -155,7 +155,7 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(result, 12)
 
     def test_collect_to_string_io(self):
-        result = Stream(range(3)).map(str).collect(Stream.Collectors.stringIo())
+        result = Stream(range(3)).map(str).collect(Stream.Collectors.StringIo())
         result.seek(0)
         result = result.read()
         self.assertEqual(result, "012")

@@ -958,7 +958,7 @@ class Stream[T](typing.Iterable[T]):
             initial: R = None
             initial_func: typing.Optional[typing.Callable[[typing.Self], R]] = None
 
-            def __call__(self, iterable: typing.Iterable[T]):
+            def __call__(self, iterable: typing.Iterable[T]) -> R:
                 val = self.initial_func() if self.initial_func else self.initial
                 for i in iterable:
                     val = self.func(val, i)
@@ -1001,7 +1001,7 @@ class Stream[T](typing.Iterable[T]):
                 d.update(v)
                 return d
 
-        class StringIo[K, V](OneByOneCollector[dict[K, V]]):
+        class StringIo[K, V](OneByOneCollector[io.StringIO]):
             initial_func = io.StringIO
 
             def func(self, buf: io.StringIO, x: str):
