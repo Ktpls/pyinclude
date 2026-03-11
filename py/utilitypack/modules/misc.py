@@ -696,7 +696,7 @@ class Cache:
 
 
 @EasyWrapper
-def RunThis(f: typing.Callable[[], typing.Any], *a, **kw):
+def RunThis[*T, R](f: typing.Callable[[*T], R], *a, **kw):
     f(*a, **kw)
     return f
 

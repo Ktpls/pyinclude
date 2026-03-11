@@ -611,8 +611,81 @@ try:
                 )
                 # delta = np.max(np.std(prevsignal, axis=0), axis=-1)
                 ret = self.filter(delta)
-            self.mtiQueue.push_and_optionally_pop_if_full(MtiFilter.MtiFrame(img, cammotion))
+            self.mtiQueue.push_and_optionally_pop_if_full(
+                MtiFilter.MtiFrame(img, cammotion)
+            )
             return ret
+
+    class PerlinMap:
+        @dataclasses.dataclass
+        class PerlinNoiseLevel:
+            magnitude: float
+            frequency: float
+
+        @classmethod
+        def generate(cls, mapshape, llevel: list[PerlinMap.PerlinNoiseLevel]):
+            """
+            height,width=mapshape
+            遍历llevel
+                生成[3, height*width/level.frequency]的随机数~U(0,1)
+                向里面concat[3, 4]的array，内容为[[0,0,0.5],[0,1,0.5],[1,0,0.5],[1,1,0.5]],用dim=1进行扩展
+                拆分为x,y,z
+                x*=width
+                y*=height
+                z=(z*2-1)*magnitude
+                用scipy插值，生成符合mapshape的图像
+            每个level的图像求和，返回
+            """
+            from scipy.interpolate import griddata
+
+            height, width = mapshape
+            total_map = np.zeros((height, width))
+
+            for level in llevel:
+                # 计算随机点数量
+                num_points = max(4, int(height * width / level.frequency))
+
+                # 生成随机点 [x, y, z]，范围在 [0,1]
+                random_points = np.random.rand(num_points - 4, 3)
+
+                # 添加边界点 [[0,0,0.5],[0,1,0.5],[1,0,0.5],[1,1,0.5]]
+                boundary_points = np.array(
+                    [[0.0, 0.0, 0.5], [0.0, 1.0, 0.5], [1.0, 0.0, 0.5], [1.0, 1.0, 0.5]]
+                )
+
+                # 合并随机点和边界点
+                all_points = np.vstack([random_points, boundary_points])
+
+                # 提取坐标
+                x_norm = all_points[:, 0]
+                y_norm = all_points[:, 1]
+                z_norm = all_points[:, 2]
+
+                # 转换到实际坐标
+                x_actual = x_norm * width
+                y_actual = y_norm * height
+                z_actual = (z_norm * 2 - 1) * level.magnitude
+
+                # 创建目标网格
+                xi, yi = np.meshgrid(np.arange(width), np.arange(height))
+                xi_flat = xi.flatten()
+                yi_flat = yi.flatten()
+
+                # 使用 scipy 插值
+                points = np.column_stack((x_actual, y_actual))
+                values = z_actual
+                target_points = np.column_stack((xi_flat, yi_flat))
+
+                # 使用线性插值，如果失败则使用最近邻
+                interpolated = griddata(
+                    points, values, target_points, method="cubic", fill_value=0.0
+                )
+
+                # 重塑为地图形状
+                level_map = interpolated.reshape((height, width))
+                total_map += level_map
+
+            return total_map
 
 except ImportError:
     pass
@@ -620,7 +693,12 @@ try:
     from PIL import Image, ImageDraw, ImageFont
 
     def aPicWithTextWithPil(
-        content: str, maxsize=[1080, 1920], textcolor=[255, 255, 255], lineinterval=10
+        content: str,
+        maxsize=[1080, 1920],
+        textcolor=[255, 255, 255],
+        lineinterval=10,
+        fontpath=r"asset\common\yahei.ttf",
+        font_size=30,
     ):
         """
         impl with PIL
@@ -633,8 +711,8 @@ try:
         draw = ImageDraw.Draw(image)
 
         # Define the font size and font type
-        font_size = 30
-        font = ImageFont.truetype(r"asset\common\yahei.ttf", font_size)
+
+        font = ImageFont.truetype(fontpath, font_size)
 
         # Split the content into lines
         lines = content.split("\n")
