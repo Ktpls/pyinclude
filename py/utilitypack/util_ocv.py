@@ -623,7 +623,7 @@ try:
             frequency: float
 
         @classmethod
-        def generate(cls, mapshape, llevel: list[PerlinMap.PerlinNoiseLevel]):
+        def generate(cls, mapshape, llevel: list[PerlinNoiseLevel]):
             """
             height,width=mapshape
             遍历llevel
