@@ -548,7 +548,6 @@ class FinalModule(torch.nn.Module):
 
     def save(self, path):
         savemodel(self, path)
-        savemodel(self, f"{path}.{self.opt_step}.ckpt")
 
 
 class MPn(torch.nn.Module):
