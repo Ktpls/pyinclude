@@ -6,8 +6,9 @@ import platform
 import os
 import random
 import torchvision
-from .util_solid import perf_statistic, GetTimeString, Stream, EnsureFileDirExists
 import re
+import collections
+from .util_solid import perf_statistic, GetTimeString, Stream, EnsureFileDirExists
 
 
 def getTorchDevice():
@@ -70,29 +71,103 @@ def batchsizeof(tensor):
     return tensor.shape[0]
 
 
-def setModule(model: torch.nn.Module, path=None, device=None, strict=True):
+def setModule(model: torch.nn.Module, path: str, device=None, strict=True):
     import os
 
     if device is None:
         device = "cpu"
 
-    if path is None:
-        print(f"Path==None")
-    elif not os.path.exists(path):
-        print(f"Warning: Path {path} not exist. Set model default")
-    else:
-        print(f"Loading existed nn {path}")
-        model.load_state_dict(
-            torch.load(path, map_location=torch.device(device), weights_only=True),
-            strict=strict,
-        )
+    loadmodel(model, path, strict=strict)
     return model.to(device)
 
 
-def savemodel(model: torch.nn.Module, path):
+type StatefulPytorchObject = torch.nn.Module | torch.optim.Optimizer | torch.optim.lr_scheduler.LRScheduler
+
+
+def loadmodel(
+    model: StatefulPytorchObject,
+    path,
+    map_location=None,
+    *a,
+    **kw,
+):
+    if not os.path.exists(path):
+        print(f"Warning: Loading pytorch checkpoint from path {path} not exist.")
+        return
+    state_dict = torch.load(path, map_location=map_location, weights_only=True)
+    model.load_state_dict(state_dict, *a, **kw)
+    return model
+
+
+def savemodel(model: StatefulPytorchObject, path):
     EnsureFileDirExists(path)
     torch.save(model.state_dict(), path)
     print(f"Saved PyTorch Model State to {path}")
+
+
+def load_state_dict_ignore_tensor_unmatched(
+    model: torch.nn.Module, state_dict: dict, verbose=True
+):
+    """
+    加载部分匹配的 state_dict，跳过形状不匹配的层
+        形状校验逻辑可能不适配优化器
+
+    Args:
+        model: 目标模型
+        state_dict: 预训练权重字典
+        verbose: 是否打印详细信息
+
+    Returns:
+        loaded_keys: 成功加载的键列表
+        skipped_keys: 跳过的键列表（形状不匹配）
+        missing_keys: 模型中缺少权重的键列表
+    """
+    model_dict = model.state_dict()
+    loaded_keys = []
+    skipped_keys = []
+    missing_keys = []
+
+    # 过滤 state_dict
+    filtered_dict = collections.OrderedDict()
+    for k, v in state_dict.items():
+        if k in model_dict:
+            model_v = model_dict[k]
+            if (
+                isinstance(v, torch.Tensor)
+                and isinstance(model_v, torch.Tensor)
+                and v.shape != model_v.shape
+            ):
+                skipped_keys.append(k)
+                if verbose:
+                    print(f"⚠️  跳过形状不匹配: {k}")
+                    print(f"   检查点形状: {v.shape}")
+                    print(f"   当前模型形状: {model_v.shape}")
+            else:
+                filtered_dict[k] = v
+                loaded_keys.append(k)
+        else:
+            missing_keys.append(k)
+            if verbose:
+                print(f"ℹ️  模型中不存在该键: {k}")
+
+    # 检查模型中有哪些键没有被加载
+    unloaded_keys = set(model_dict.keys()) - set(filtered_dict.keys())
+    if unloaded_keys and verbose:
+        print(f"\n📋 未加载的模型参数 ({len(unloaded_keys)} 个):")
+        for key in list(unloaded_keys)[:10]:  # 只显示前10个
+            print(f"   - {key}")
+        if len(unloaded_keys) > 10:
+            print(f"   ... 还有 {len(unloaded_keys) - 10} 个")
+
+    if verbose:
+        print(f"\n✅ 可加载: {len(filtered_dict)} 个参数")
+        print(f"⏭️  跳过（形状不匹配）: {len(skipped_keys)} 个参数")
+        print(f"❓ 预训练中有但模型无: {len(missing_keys)} 个参数")
+
+    # 加载过滤后的 state_dict
+    model.load_state_dict(filtered_dict, strict=False)
+
+    return filtered_dict, skipped_keys, missing_keys
 
 
 def tensorimg2ndarray(m: torch.Tensor):
@@ -429,8 +504,8 @@ class ConvNormInsp(torch.nn.Module):
 
 class ConvGnRelu(ConvNormInsp):
     def get_norm(self, out_channels, numGroup=None, **kw):
-        numGroup = (
-            numGroup or (4 if out_channels >= 16 else 2 if out_channels >= 8 else 1)
+        numGroup = numGroup or (
+            4 if out_channels >= 16 else 2 if out_channels >= 8 else 1
         )
         return torch.nn.GroupNorm(numGroup, out_channels)
 
