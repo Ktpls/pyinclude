@@ -418,10 +418,11 @@ class trainpipe:
         dataloader,
         optimizer,
         epochnum=10,
+        epoch_start=0,
         outputperbatchnum=100,
     ):
         ps = perf_statistic()
-        for ep in range(epochnum):
+        for ep in range(epoch_start, epochnum):
             print(f"Epoch {ep} / {epochnum}")
             print("-------------------------------")
             # train
