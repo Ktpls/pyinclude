@@ -76,8 +76,8 @@ def setModule(model: torch.nn.Module, path: str, device=None, strict=True):
 
     if device is None:
         device = "cpu"
-
-    loadmodel(model, path, strict=strict)
+    map_location = "cpu" if device == "cpu" else None
+    loadmodel(model, path, map_location=map_location, strict=strict)
     return model.to(device)
 
 
@@ -731,7 +731,11 @@ class PerceptualLoss:
         lfeat_xpred = self.exported_forward(model, xpred)
         loss_perc = (
             Stream(zip(lfeat_x, lfeat_xpred))
-            .map(lambda feat_x, feat_xpred: torch.mean((feat_x - feat_xpred) ** 2))
+            .map(
+                lambda feat_x, feat_xpred: torch.nn.functional.mse_loss(
+                    feat_x, feat_xpred
+                )
+            )
             .collect(sum)
         )
 
