@@ -931,6 +931,40 @@ class BashProcess:
         return output
 
 
+async def GatherAsyncFutureGenerator[T](
+    gen: typing.AsyncGenerator[typing.Coroutine[typing.Any, typing.Any, T], typing.Any],
+    concurrency=None,
+) -> typing.AsyncGenerator[T, typing.Any]:
+    """逐个处理完成的任务，内存占用恒定"""
+    lfuture: list[asyncio.Task] = list()
+    lrunning_future: set[asyncio.Task] = set()
+
+    async for coro in gen:
+        task = asyncio.create_task(coro)
+        lfuture.append(task)
+        lrunning_future.add(task)
+        # 当任务数达到阈值时，等待最早完成的，释放内存
+        if concurrency and len(lrunning_future) >= concurrency:
+            done, pending = await asyncio.wait(
+                lrunning_future, return_when=asyncio.FIRST_COMPLETED
+            )
+            lrunning_future = pending
+            for i in range(0, len(lfuture)):
+                if lfuture[i].done():
+                    yield lfuture[i].result()
+                else:
+                    break
+            lfuture = lfuture[i:]
+
+    # 处理剩余任务
+    if lrunning_future:
+        done, pending = await asyncio.wait(
+            lrunning_future, return_when=asyncio.ALL_COMPLETED
+        )
+        for i in range(0, len(lfuture)):
+            yield lfuture[i].result()
+
+
 class Stream[T](typing.Iterable[T]):
     # copied from superstream 0.2.6 !
     # but with some improvements
@@ -1597,7 +1631,7 @@ class Stream[T](typing.Iterable[T]):
 
     def gather_async[R_Futr](
         self: Stream[types.CoroutineType[typing.Any, typing.Any, R_Futr]],
-        concurrent_limit: int = None,
+        concurrency: int = None,
     ) -> Stream[R_Futr]:
         """
         use like:
@@ -1608,31 +1642,26 @@ class Stream[T](typing.Iterable[T]):
         keeps order as asyncio.gather did
         """
 
-        async def gather(_stream):
-            return await asyncio.gather(*_stream)
+        async def gen2agen(_stream):
+            for i in _stream:
+                yield i
+
+        async def agen2list(agen):
+            r = []
+            async for i in agen:
+                r.append(i)
+            return r
+
+        async def main(_stream):
+            agen = gen2agen(_stream)
+            gathered_agen = GatherAsyncFutureGenerator(agen, concurrency=concurrency)
+            r = await agen2list(gathered_agen)
+            return r
 
         def run(_stream):
-            yield from asyncio.run(gather(_stream))
+            yield from asyncio.run(main(_stream))
 
-        if concurrent_limit is not None:
-            semaphore = asyncio.Semaphore(concurrent_limit)
-
-            async def semaphored_task(
-                task: types.CoroutineType[typing.Any, typing.Any, R_Futr],
-            ) -> R_Futr:
-                async with semaphore:
-                    return await task
-
-        else:
-
-            async def semaphored_task(
-                task: types.CoroutineType[typing.Any, typing.Any, R_Futr],
-            ) -> R_Futr:
-                return await task
-
-        return self.map(
-            semaphored_task, pred_option=Stream.PredProcessOption(enable_awaiting=False)
-        ).wrap_iterator(run)
+        return self.wrap_iterator(run)
 
     def gather_thread_future[R_Futr](
         self: Stream[concurrent.futures.Future[R_Futr]],

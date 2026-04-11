@@ -14,7 +14,7 @@ def AllFileIn(
             continue
         yield from map(lambda f: os.path.join(dirpath, f), file)
         if includeDir:
-        	yield from map(lambda f: os.path.join(dirpath, f), dir)
+            yield from map(lambda f: os.path.join(dirpath, f), dir)
 
 
 def ReadFile(path):
