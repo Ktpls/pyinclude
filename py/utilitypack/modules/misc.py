@@ -1016,15 +1016,25 @@ class Stream[T](typing.Iterable[T]):
                         val = await self.func(val, i)
                 return val
 
-        @staticmethod
-        def join(separator: str = ""):
-            return lambda it: separator.join(it)
+        @dataclasses.dataclass
+        class join(BaseCollector):
+            separator: str = ""
 
-        @staticmethod
-        def ndarray():
-            import numpy as np
+            def __call__(self, stream):
+                return self.separator.join(stream)
 
-            return lambda it: np.array(list(it))
+        class ndarray(BaseCollector):
+            def __call__(self, stream):
+                import numpy as np
+
+                return np.array(list(stream))
+
+        @dataclasses.dataclass
+        class fork(BaseCollector):
+            n: int
+
+            def __call__(self, stream):
+                return itertools.tee(stream, self.n)
 
         list = list
         set = set
