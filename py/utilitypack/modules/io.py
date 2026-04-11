@@ -7,15 +7,14 @@ import re
 def AllFileIn(
     path,
     includeFileInSubDir=True,
-    path_filter: typing.Optional[typing.Callable[[str], bool]] = None,
+    includeDir=False,
 ):
     for dirpath, dir, file in os.walk(path):
         if not includeFileInSubDir and dirpath != path:
             continue
-        fullPath = map(lambda f: os.path.join(dirpath, f), file)
-        if path_filter is not None:
-            fullPath = filter(path_filter, fullPath)
-        yield from fullPath
+        yield from map(lambda f: os.path.join(dirpath, f), file)
+        if includeDir:
+        	yield from map(lambda f: os.path.join(dirpath, f), dir)
 
 
 def ReadFile(path):
