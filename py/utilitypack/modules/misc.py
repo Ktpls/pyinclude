@@ -936,7 +936,7 @@ async def GatherAsyncFutureGenerator[T](
     concurrency=None,
 ) -> typing.AsyncGenerator[T, typing.Any]:
     """逐个处理完成的任务，内存占用恒定"""
-    lfuture: list[asyncio.Task] = list()
+    lfuture: collections.deque[asyncio.Task] = collections.deque()
     lrunning_future: set[asyncio.Task] = set()
 
     async for coro in gen:
@@ -949,20 +949,22 @@ async def GatherAsyncFutureGenerator[T](
                 lrunning_future, return_when=asyncio.FIRST_COMPLETED
             )
             lrunning_future = pending
-            for i in range(0, len(lfuture)):
-                if lfuture[i].done():
-                    yield lfuture[i].result()
-                else:
+            while True:
+                if not lfuture:
                     break
-            lfuture = lfuture[i:]
+                fut = lfuture[0]
+                if not fut.done():
+                    break
+                yield fut.result()
+                lfuture.popleft()
 
     # 处理剩余任务
     if lrunning_future:
         done, pending = await asyncio.wait(
             lrunning_future, return_when=asyncio.ALL_COMPLETED
         )
-        for i in range(0, len(lfuture)):
-            yield lfuture[i].result()
+        for fut in lfuture:
+            yield fut.result()
 
 
 class Stream[T](typing.Iterable[T]):
@@ -1789,14 +1791,14 @@ def SuccessOrNone[R](
 class CommitUnpressureizer:
     def __init__(self, func: typing.Callable, interval=None):
         self.func = func
-        self.interval = interval or 100
+        self.interval = interval
         self.count = 0
         self.lock = threading.Lock()
 
     def commit(self):
         commit = None
         with self.lock:
-            if self.count >= self.interval:
+            if self.interval is None or self.count >= self.interval:
                 self.count = 0
                 commit = True
             else:
