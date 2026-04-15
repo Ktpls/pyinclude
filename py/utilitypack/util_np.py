@@ -505,3 +505,8 @@ def merge_splited_imgs(
                         merged_img[y_start:y_end, x_start:x_end] = img
 
     return merged_img
+
+
+def npsoftmax(x: np.ndarray, dim: int = -1):
+    ex = np.exp(x - np.max(x))
+    return ex / (np.sum(ex, axis=dim, keepdims=True) + 1e-10)
