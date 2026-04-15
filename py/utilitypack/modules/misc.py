@@ -1856,3 +1856,23 @@ class SingletonGlobalIsolation(SingletonIsolation):
 
 def ccomma[*Ts, T](*a: typing.Unpack[tuple[*Ts, T]]) -> T:
     return a[-1]
+
+
+class BaseClassAutoFindingSubclass:
+    modelName = None
+
+    @classmethod
+    def get_subclasses_dict(cls) -> dict[str, type[typing.Self]]:
+        """辅助方法，递归获取所有子类的信息"""
+        result = {}
+        # 添加子类自定义名:子类的映射
+        if hasattr(cls, "modelName") and cls.modelName is not None:
+            result[cls.modelName] = cls
+
+        # 添加子类类名:子类的映射
+        result[cls.__name__] = cls
+        for subclass in cls.__subclasses__():
+            # 递归处理下一级子类
+            result.update(subclass.get_subclasses_dict())
+
+        return result

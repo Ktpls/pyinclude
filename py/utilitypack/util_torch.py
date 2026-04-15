@@ -845,3 +845,154 @@ def tensor_contains_nan(x: torch.Tensor):
 
 def ImgTensor2NdarrayShowable(x: torch.Tensor):
     return x.cpu().numpy().transpose(0, 2, 3, 1).squeeze()
+
+
+class PositionalEmbeddingSinusoidal(torch.nn.Module):
+    def __init__(self, dim: int, base: int = 10000, maxlen: int = 512, device=None):
+        super().__init__()
+        assert dim % 2 == 0
+        d = torch.arange(0, dim, step=2, device=device)[None, :]
+        n = torch.arange(0, maxlen, device=device)[:, None]
+        pe = torch.zeros(maxlen, dim, device=device)
+        pe[:, 0::2] = torch.sin(n / base ** (d / dim))
+        pe[:, 1::2] = torch.cos(n / base ** (d / dim))
+        self.register_buffer("pe", pe)
+        self.pe: torch.Tensor
+        self.dim = dim
+        self.base = base
+        self.maxlen = maxlen
+
+    def forward(self, x: torch.Tensor):
+        B, N, C = x.shape
+        assert N <= self.maxlen and C == self.dim
+        return x + self.pe[None, :N, :]
+
+
+class PositionalEmbedding2DSinusoidal(torch.nn.Module):
+    def __init__(self, dim: int, base: int = 1000, maxlen: int = 32, device=None):
+        super().__init__()
+        assert dim % 4 == 0
+        d = torch.arange(0, dim, step=4, device=device)[:, None]
+        n = torch.arange(0, maxlen, device=device)[None, :]
+        pe = torch.zeros(dim, maxlen, maxlen, device=device)
+        pe[0::4, :, :] = torch.sin(n / base ** (d / dim))[:, :, None]
+        pe[1::4, :, :] = torch.cos(n / base ** (d / dim))[:, :, None]
+        pe[2::4, :, :] = torch.sin(n / base ** (d / dim))[:, None, :]
+        pe[3::4, :, :] = torch.cos(n / base ** (d / dim))[:, None, :]
+        self.register_buffer("pe", pe)
+        self.pe: torch.Tensor
+        self.dim = dim
+        self.base = base
+        self.maxlen = maxlen
+
+    def forward(self, x: torch.Tensor):
+        B, C, H, W = x.shape
+        assert H <= self.maxlen and W <= self.maxlen and C == self.dim
+        return x + self.pe[None, :, :H, :W]
+
+
+class MnTransformerBlock(torch.nn.Module):
+    def __init__(
+        self,
+        in_dim: int,
+        ffn_dim: int,
+        num_head_q: int,
+        num_head_kv: int = None,
+        dropout=0.1,
+        prelayer_norm: bool = True,
+        bias: bool = False,
+    ):
+        super().__init__()
+        self.in_dim = in_dim
+        self.atte_dim = in_dim
+        assert self.atte_dim % num_head_q == 0
+        self.out_dim = in_dim
+        self.ffn_dim = ffn_dim
+        self.num_head_q = num_head_q
+        if num_head_kv is None:
+            num_head_kv = num_head_q
+        self.num_head_kv = num_head_kv
+        assert num_head_q % num_head_kv == 0
+        self.atte_dim_per_head = self.atte_dim // num_head_q
+        self.v_dim_per_head = self.atte_dim_per_head
+        self.dropout = dropout
+        self.enable_gqa = num_head_q != num_head_kv
+        self.prelayer_norm = prelayer_norm
+        self.q = torch.nn.Linear(
+            in_dim, self.atte_dim_per_head * self.num_head_q, bias=bias
+        )
+        self.k = torch.nn.Linear(
+            in_dim, self.atte_dim_per_head * self.num_head_kv, bias=bias
+        )
+        self.v = torch.nn.Linear(
+            in_dim, self.v_dim_per_head * self.num_head_kv, bias=bias
+        )
+        self.o = torch.nn.Linear(self.v_dim_per_head * self.num_head_q, in_dim)
+        self.ffn = torch.nn.Sequential(
+            torch.nn.Linear(in_dim, ffn_dim),
+            self.get_actfunc(),
+            torch.nn.Linear(ffn_dim, self.out_dim),
+        )
+        self.norm_ffn = self.get_norm(in_dim)
+        self.norm_atte = self.get_norm(in_dim)
+
+    def get_actfunc(self):
+        return torch.nn.LeakyReLU()
+
+    def get_norm(self, in_dim):
+        return torch.nn.LayerNorm(in_dim)
+
+    def selfattention(self, x: torch.Tensor):
+        """
+        input and output shape of torch.nn.functional.scaled_dot_product_attention
+        q: (N,...,Hq,L,E)
+        k: (N,...,H,S,E)
+        v: (N,...,H,S,Ev)
+        N: Batch size...:Any number of other batch dimensions (optional)
+        S: Source sequence length
+        L: Target sequence length
+        E: Embedding dimension of the query and key
+        Ev: Embedding dimension of the value
+        Hq: Number of heads of query
+        H: Number of heads of key and value
+        """
+        B, N, C = x.shape
+        q = (
+            self.q(x)
+            .reshape(B, N, self.num_head_q, self.atte_dim_per_head)
+            .permute(0, 2, 1, 3)
+        )
+        k = (
+            self.k(x)
+            .reshape(B, N, self.num_head_kv, self.atte_dim_per_head)
+            .permute(0, 2, 1, 3)
+        )
+        v = (
+            self.v(x)
+            .reshape(B, N, self.num_head_kv, self.v_dim_per_head)
+            .permute(0, 2, 1, 3)
+        )
+        r = (
+            torch.nn.functional.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=None,
+                dropout_p=self.dropout,
+                enable_gqa=self.enable_gqa,
+            )
+            .permute(0, 2, 1, 3)
+            .reshape(B, N, self.v_dim_per_head * self.num_head_q)
+        )
+        o = self.o(r)
+        return o
+
+    def forward(self, x: torch.Tensor):
+        if self.prelayer_norm:
+            # prelayer norm
+            x = self.selfattention(self.norm_atte(x)) + x
+            x = self.ffn(self.norm_ffn(x)) + x
+        else:
+            x = self.norm_atte(self.selfattention(x) + x)
+            x = self.norm_ffn(self.ffn(x) + x)
+        return x
