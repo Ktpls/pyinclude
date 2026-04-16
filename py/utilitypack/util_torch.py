@@ -16,6 +16,10 @@ def getTorchDevice():
     return device
 
 
+def getCalcDtype():
+    return torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
+
 def getDeviceInfo():
     try:
         import psutil
