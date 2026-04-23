@@ -1000,3 +1000,67 @@ class MnTransformerBlock(torch.nn.Module):
             x = self.norm_atte(self.selfattention(x) + x)
             x = self.norm_ffn(self.ffn(x) + x)
         return x
+
+
+class RoPE(torch.nn.Module):
+    def __init__(self, dim: int, maxlen=64, base=10000):
+        super().__init__()
+        self.dim = dim
+        self.maxlen = maxlen
+        self.base = base
+        cos, sin = self._getEmbCoeff()
+        self.register_buffer("cos", cos, persistent=False)
+        self.cos: torch.Tensor
+        self.register_buffer("sin", sin, persistent=False)
+        self.sin: torch.Tensor
+
+    def _getEmbCoeff(self):
+        m = torch.arange(self.maxlen)[None, :, None]
+        i = torch.arange(0, self.dim, step=2)[None, None, :]
+        theta = self.base ** (-i / self.dim)
+        return torch.cos(m * theta), torch.sin(m * theta)
+
+    def forward(self, x: torch.Tensor):
+        B, L, E = x.shape
+        r = torch.zeros_like(x)
+        cos = self.cos[:, :L, :]
+        sin = self.sin[:, :L, :]
+        r[:, :, 0::2] = x[:, :, 0::2] * cos - x[:, :, 1::2] * sin
+        r[:, :, 1::2] = x[:, :, 1::2] * cos + x[:, :, 0::2] * sin
+        return r
+
+
+class RoPE2D(RoPE):
+    def _getEmbCoeff(self):
+        m = torch.arange(self.maxlen)[None, :, None]
+        i = torch.arange(0, self.dim, step=4)[None, None, :]
+        theta = self.base ** (-i / self.dim)
+        return torch.cos(m * theta), torch.sin(m * theta)
+
+    def forward(self, x: torch.Tensor):
+        shape = x.shape
+        H, W, E = shape[-3:]
+        cos = self.cos
+        sin = self.sin
+        w = torch.arange(0, W)
+        h = torch.arange(0, H)
+        x = x.reshape(-1, H, W, E)
+        r = torch.zeros_like(x)
+        r[:, :, :, 0::4] = (
+            x[:, :, :, 0::4] * cos[:, :H, None, :]
+            - x[:, :, :, 1::4] * sin[:, :H, None, :]
+        )
+        r[:, :, :, 1::4] = (
+            x[:, :, :, 1::4] * cos[:, :H, None, :]
+            + x[:, :, :, 0::4] * sin[:, :H, None, :]
+        )
+        r[:, :, :, 2::4] = (
+            x[:, :, :, 2::4] * cos[:, None, :W, :]
+            - x[:, :, :, 3::4] * sin[:, None, :W, :]
+        )
+        r[:, :, :, 3::4] = (
+            x[:, :, :, 3::4] * cos[:, None, :W, :]
+            + x[:, :, :, 2::4] * sin[:, None, :W, :]
+        )
+        r = r.reshape(*shape)
+        return r
