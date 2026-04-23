@@ -723,6 +723,7 @@ def Decode(*args):
 
 
 class MaxRetry:
+    class RetryExceededException(Exception): ...
     def __init__(
         self,
         maxRetry: int = 3,
@@ -741,7 +742,7 @@ class MaxRetry:
     def __next__(self):
         if self.i >= self.maxRetry:
             if self.errOnMaxRetry:
-                raise RuntimeError("Max retry reached")
+                raise MaxRetry.RetryExceededException("Max retry reached")
             else:
                 raise StopIteration
         if self.succCond and self.succCond():

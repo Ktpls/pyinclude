@@ -946,7 +946,7 @@ class MnTransformerBlock(torch.nn.Module):
     def get_norm(self, in_dim):
         return torch.nn.LayerNorm(in_dim)
 
-    def selfattention(self, x: torch.Tensor):
+    def selfattention(self, x: torch.Tensor, attn_mask=None, is_causal=False):
         """
         input and output shape of torch.nn.functional.scaled_dot_product_attention
         q: (N,...,Hq,L,E)
@@ -981,9 +981,10 @@ class MnTransformerBlock(torch.nn.Module):
                 q,
                 k,
                 v,
-                attn_mask=None,
+                attn_mask=attn_mask,
                 dropout_p=self.dropout,
                 enable_gqa=self.enable_gqa,
+                is_causal=is_causal,
             )
             .permute(0, 2, 1, 3)
             .reshape(B, N, self.v_dim_per_head * self.num_head_q)
@@ -991,12 +992,19 @@ class MnTransformerBlock(torch.nn.Module):
         o = self.o(r)
         return o
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, attn_mask=None, is_causal=False):
         if self.prelayer_norm:
             # prelayer norm
-            x = self.selfattention(self.norm_atte(x)) + x
+            x = (
+                self.selfattention(
+                    self.norm_atte(x), attn_mask=attn_mask, is_causal=is_causal
+                )
+                + x
+            )
             x = self.ffn(self.norm_ffn(x)) + x
         else:
-            x = self.norm_atte(self.selfattention(x) + x)
+            x = self.norm_atte(
+                self.selfattention(x, attn_mask=attn_mask, is_causal=is_causal) + x
+            )
             x = self.norm_ffn(self.ffn(x) + x)
         return x
