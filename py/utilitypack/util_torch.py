@@ -9,6 +9,8 @@ import torchvision
 import re
 import collections
 from .util_solid import perf_statistic, GetTimeString, Stream, EnsureFileDirExists
+import logging
+import warnings
 
 
 def getTorchDevice():
@@ -75,9 +77,7 @@ def batchsizeof(tensor):
     return tensor.shape[0]
 
 
-def setModule(model: torch.nn.Module, path: str, device=None, strict=True):
-    import os
-
+def setModule[T: torch.nn.Module](model: T, path: str, device=None, strict=True) -> T:
     if device is None:
         device = "cpu"
     map_location = "cpu" if device == "cpu" else None
@@ -417,14 +417,28 @@ import typing
 
 
 class trainpipe:
+    optimizer: torch.optim.Optimizer = None
+
+    def setOptimizer(self, optimizer: torch.optim.Optimizer):
+        self.optimizer = optimizer
+        return self
+
     def train(
         self,
         dataloader,
-        optimizer,
+        optimizer: torch.optim.Optimizer = None,
         epochnum=10,
         epoch_start=0,
         outputperbatchnum=100,
     ):
+        if optimizer:
+            warnings.warn(
+                f"DEPRECATION WARNING: param optimizer is deprecated, use setOptimizer() instead",
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
+            self.setOptimizer(optimizer)
+        assert self.optimizer
         ps = perf_statistic()
         for ep in range(epoch_start, epochnum):
             print(f"Epoch {ep} / {epochnum}")
@@ -432,7 +446,7 @@ class trainpipe:
             # train
             for batch, datatuple in enumerate(dataloader):
                 ps.start()
-                loss = self.optimize(optimizer, datatuple)
+                loss = self.optimize_with_data(datatuple)
                 ps.stop().countcycle()
                 if batch % outputperbatchnum == 0:
                     self.report_train_progress(ps, batch, len(dataloader), loss.item())
@@ -450,16 +464,19 @@ class trainpipe:
         print(f"Instant loss: {fltloss:>7f}")
         return fltloss
 
-    def optimize(self, optimizer, datatuple):
+    def optimize_with_data(self, datatuple):
         loss = self.calcloss(datatuple)
-        optimizer.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        self.optimizer_step()
         return loss
+
+    def optimizer_step(self):
+        self.optimizer.step()
 
     def prepare(self): ...
 
-    def calcloss(self, datatuple): ...
+    def calcloss(self, datatuple) -> torch.Tensor: ...
 
     def inferenceProgress(self, datatuple): ...
 
@@ -934,13 +951,13 @@ class MnTransformerBlock(torch.nn.Module):
         self.o = torch.nn.Linear(self.v_dim_per_head * self.num_head_q, in_dim)
         self.ffn = torch.nn.Sequential(
             torch.nn.Linear(in_dim, ffn_dim),
-            self.get_actfunc(),
+            self.get_actfunc(ffn_dim),
             torch.nn.Linear(ffn_dim, self.out_dim),
         )
         self.norm_ffn = self.get_norm(in_dim)
         self.norm_atte = self.get_norm(in_dim)
 
-    def get_actfunc(self):
+    def get_actfunc(self, dim: int):
         return torch.nn.LeakyReLU()
 
     def get_norm(self, in_dim):
