@@ -724,6 +724,7 @@ def Decode(*args):
 
 class MaxRetry:
     class RetryExceededException(Exception): ...
+
     def __init__(
         self,
         maxRetry: int = 3,
@@ -1074,6 +1075,13 @@ class Stream[T](typing.Iterable[T]):
 
             def func(self, buf: T, x: T):
                 return buf * x
+
+        class toMap[K, V](BaseCollector[dict[K, V]]):
+            predK: typing.Callable[[T], K]
+            predV: typing.Callable[[T], V]
+
+            def __call__(self, stream):
+                return stream.to_map(self.predK, self.predV)
 
     @dataclasses.dataclass
     class PredProcessOption(UnionableClass):
