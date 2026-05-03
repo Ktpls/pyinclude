@@ -949,16 +949,21 @@ class MnTransformerBlock(torch.nn.Module):
         self.v = torch.nn.Linear(
             in_dim, self.v_dim_per_head * self.num_head_kv, bias=bias
         )
-        self.o = torch.nn.Linear(self.v_dim_per_head * self.num_head_q, in_dim, bias=bias)
-        self.ffn = torch.nn.Sequential(
-            torch.nn.Linear(in_dim, ffn_dim),
-            self.get_actfunc(ffn_dim),
-            torch.nn.Linear(ffn_dim, self.out_dim),
+        self.o = torch.nn.Linear(
+            self.v_dim_per_head * self.num_head_q, in_dim, bias=bias
         )
+        self.ffn = self.get_linear(in_dim, ffn_dim, self.out_dim)
         self.norm_ffn = self.get_norm(in_dim)
         self.norm_atte = self.get_norm(in_dim)
         self.dropout_proj = torch.nn.Dropout(dropout_attn)
         self.dropout_ffn = torch.nn.Dropout(dropout_ffn)
+
+    def get_linear(self, in_dim, ffn_dim, out_dim):
+        return torch.nn.Sequential(
+            torch.nn.Linear(in_dim, ffn_dim),
+            self.get_actfunc(ffn_dim),
+            torch.nn.Linear(ffn_dim, out_dim),
+        )
 
     def get_actfunc(self, dim: int):
         return torch.nn.GELU()
