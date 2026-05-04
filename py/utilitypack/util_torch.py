@@ -900,7 +900,7 @@ class PositionalEmbedding2DSinusoidal(torch.nn.Module):
         pe[1::4, :, :] = torch.cos(n / base ** (d / dim))[:, :, None]
         pe[2::4, :, :] = torch.sin(n / base ** (d / dim))[:, None, :]
         pe[3::4, :, :] = torch.cos(n / base ** (d / dim))[:, None, :]
-        self.register_buffer("pe", pe)
+        self.register_buffer("pe", pe, persistent=False)
         self.pe: torch.Tensor
         self.dim = dim
         self.base = base
