@@ -485,17 +485,37 @@ def ComputeIfAbsent(
     return instance
 
 
-class Container:
-    v = None
+class Box[T]:
+    _v: typing.Optional[T]
+
+    class EmptyBoxException(Exception): ...
+
+    def __init__(self, initial: typing.Optional[T] = None):
+        self.set(initial)
+
+    def _raiseIfEmpty(self):
+        if self.isEmpty():
+            raise Box.EmptyBoxException(f"box is empty")
+
+    def __getattr__(self, name):
+        self._raiseIfEmpty()
+        return getattr(self._v, name)
+
+    def __setattr__(self, name, value):
+        self._raiseIfEmpty()
+        setattr(self._v, name, value)
 
     def get(self):
-        return self.v
+        return self._v
 
     def set(self, newContent):
-        self.v = newContent
+        object.__setattr__(self, "_v", newContent)
+
+    def clear(self):
+        self.set(None)
 
     def isEmpty(self):
-        return self.v is None
+        return self._v is None
 
 
 @dataclasses.dataclass
