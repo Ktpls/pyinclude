@@ -1,6 +1,7 @@
-from ..modules.misc import IdentityMapping,EPS
+from ..modules.misc import IdentityMapping, EPS
 from ..modules.time import perf_statistic
 import typing
+
 # unused but kept for compatibility purposes
 
 
@@ -16,7 +17,7 @@ def BetterGroupBy(l: list, pred):
     return r
 
 
-def Coalesce(*args):
+def Coalesce[T](*args: T) -> typing.Optional[T]:
     for arg in args:
         if arg is not None:
             return arg
