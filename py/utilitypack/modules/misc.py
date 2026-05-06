@@ -1096,12 +1096,13 @@ class Stream[T](typing.Iterable[T]):
             def func(self, buf: T, x: T):
                 return buf * x
 
+        @dataclasses.dataclass
         class toMap[K, V](BaseCollector[dict[K, V]]):
             predK: typing.Callable[[T], K]
             predV: typing.Callable[[T], V]
 
-            def __call__(self, stream):
-                return stream.to_map(self.predK, self.predV)
+            def __call__(self, it):
+                return Stream(it).to_map(self.predK, self.predV)
 
     @dataclasses.dataclass
     class PredProcessOption(UnionableClass):
