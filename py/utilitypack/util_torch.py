@@ -1037,6 +1037,9 @@ class MnTransformerBlock(torch.nn.Module):
 
 class RoPE(torch.nn.Module):
     def __init__(self, dim: int, maxlen=64, base=10000):
+        """
+        dim: embedding dimension per HEAD!!! not total embedding dimension
+        """
         super().__init__()
         self.dim = dim
         self.maxlen = maxlen
@@ -1048,25 +1051,26 @@ class RoPE(torch.nn.Module):
         self.sin: torch.Tensor
 
     def _getEmbCoeff(self):
-        m = torch.arange(self.maxlen)[None, :, None]
-        i = torch.arange(0, self.dim, step=2)[None, None, :]
+        m = torch.arange(self.maxlen)[:, None]
+        i = torch.arange(0, self.dim, step=2)[None, :]
         theta = self.base ** (-i / self.dim)
         return torch.cos(m * theta), torch.sin(m * theta)
 
     def forward(self, x: torch.Tensor):
-        B, L, E = x.shape
+        # x like (B, ..., L, E)
+        L = x.shape[-2]
         r = torch.zeros_like(x)
-        cos = self.cos[:, :L, :]
-        sin = self.sin[:, :L, :]
-        r[:, :, 0::2] = x[:, :, 0::2] * cos - x[:, :, 1::2] * sin
-        r[:, :, 1::2] = x[:, :, 1::2] * cos + x[:, :, 0::2] * sin
+        cos = self.cos[:L, :]
+        sin = self.sin[:L, :]
+        r[..., 0::2] = x[..., 0::2] * cos - x[..., 1::2] * sin
+        r[..., 1::2] = x[..., 1::2] * cos + x[..., 0::2] * sin
         return r
 
 
 class RoPE2D(RoPE):
     def _getEmbCoeff(self):
-        m = torch.arange(self.maxlen)[None, :, None]
-        i = torch.arange(0, self.dim, step=4)[None, None, :]
+        m = torch.arange(self.maxlen)[:, None]
+        i = torch.arange(0, self.dim, step=4)[None, :]
         theta = self.base ** (-i / self.dim)
         return torch.cos(m * theta), torch.sin(m * theta)
 
@@ -1079,21 +1083,9 @@ class RoPE2D(RoPE):
         h = torch.arange(0, H)
         x = x.reshape(-1, H, W, E)
         r = torch.zeros_like(x)
-        r[:, :, :, 0::4] = (
-            x[:, :, :, 0::4] * cos[:, :H, None, :]
-            - x[:, :, :, 1::4] * sin[:, :H, None, :]
-        )
-        r[:, :, :, 1::4] = (
-            x[:, :, :, 1::4] * cos[:, :H, None, :]
-            + x[:, :, :, 0::4] * sin[:, :H, None, :]
-        )
-        r[:, :, :, 2::4] = (
-            x[:, :, :, 2::4] * cos[:, None, :W, :]
-            - x[:, :, :, 3::4] * sin[:, None, :W, :]
-        )
-        r[:, :, :, 3::4] = (
-            x[:, :, :, 3::4] * cos[:, None, :W, :]
-            + x[:, :, :, 2::4] * sin[:, None, :W, :]
-        )
+        r[..., 0::4] = x[..., 0::4] * cos[:H, None, :] - x[..., 1::4] * sin[:H, None, :]
+        r[..., 1::4] = x[..., 1::4] * cos[:H, None, :] + x[..., 0::4] * sin[:H, None, :]
+        r[..., 2::4] = x[..., 2::4] * cos[None, :W, :] - x[..., 3::4] * sin[None, :W, :]
+        r[..., 3::4] = x[..., 3::4] * cos[None, :W, :] + x[..., 2::4] * sin[None, :W, :]
         r = r.reshape(*shape)
         return r
