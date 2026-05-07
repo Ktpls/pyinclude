@@ -11,6 +11,8 @@ import collections
 from .util_solid import perf_statistic, GetTimeString, Stream, EnsureFileDirExists
 import logging
 import warnings
+import time
+import typing
 
 
 def getTorchDevice():
@@ -63,6 +65,16 @@ def getDeviceInfo():
     return f"{cpuInfo}\n" + f"{gpuInfo}"
 
 
+@typing.runtime_checkable
+class PytorchStateDictSupported(typing.Protocol):
+    """
+    自定义 Protocol：标记支持 state_dict 序列化机制的对象。
+    """
+
+    def state_dict(self) -> dict[str, typing.Any]: ...
+    def load_state_dict(self, state_dict: dict[str, typing.Any]) -> None: ...
+
+
 def spectrumDecompose(s, psize):
     if type(s) is int:
         s = torch.tensor([s])
@@ -85,11 +97,8 @@ def setModule[T: torch.nn.Module](model: T, path: str, device=None, strict=True)
     return model.to(device)
 
 
-type StatefulPytorchObject = torch.nn.Module | torch.optim.Optimizer | torch.optim.lr_scheduler.LRScheduler
-
-
 def loadmodel(
-    model: StatefulPytorchObject,
+    model: PytorchStateDictSupported,
     path,
     map_location=None,
     *a,
@@ -103,7 +112,7 @@ def loadmodel(
     return model
 
 
-def savemodel(model: StatefulPytorchObject, path):
+def savemodel(model: PytorchStateDictSupported, path):
     EnsureFileDirExists(path)
     torch.save(model.state_dict(), path)
     print(f"Saved PyTorch Model State to {path}")
@@ -408,14 +417,6 @@ class ModuleFunc(torch.nn.Module):
         return self.func(x)
 
 
-# from torch.utils.tensorboard import SummaryWriter
-# from datetime import datetime
-
-
-import time
-import typing
-
-
 class trainpipe:
     optimizer: torch.optim.Optimizer = None
 
@@ -504,6 +505,38 @@ class trainpipe:
 
     def demo(self, *arg, **kw): ...
     def on_epoch_finish(self, epochnum_current, epochnum_total): ...
+
+    @classmethod
+    def saved_members(cls):
+        return []
+
+    TypesSupportStateDict = PytorchStateDictSupported
+
+    def state_dict(self):
+        return (
+            Stream(self.saved_members())
+            .map(lambda k: (k, getattr(self, k)))
+            .map(
+                lambda k, v: (
+                    k,
+                    (
+                        v.state_dict()
+                        if isinstance(v, self.TypesSupportStateDict)
+                        else v
+                    ),
+                )
+            )
+            .collect(Stream.Collectors.toMap())
+        )
+
+    def load_state_dict(self, state_dict):
+        for k in self.saved_members():
+            v = getattr(self, k)
+            if isinstance(v, self.TypesSupportStateDict):
+                v.load_state_dict(state_dict[k])
+            else:
+                setattr(self, k, state_dict[k])
+        return self
 
 
 class ConvNormInsp(torch.nn.Module):
@@ -648,17 +681,13 @@ def getmodel(model0: torch.nn.Module, *arg, **kwarg):
 class FinalModule(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.register_buffer("opt_step", torch.tensor(0, dtype=torch.int32))
-        self.opt_step: torch.Tensor
-
-    def update_step(self, delta=1):
-        self.opt_step += delta
 
     def parameters(
-        self, recurse: bool = True
+        self, recurse: bool = True, requires_grad: typing.Optional[bool] = True
     ) -> typing.Iterator[torch.nn.parameter.Parameter]:
         return filter(
-            lambda x: x.requires_grad is not False, super().parameters(recurse)
+            lambda x: requires_grad is None or x.requires_grad == requires_grad,
+            super().parameters(recurse),
         )
 
     def load(self, path, *a, **kw):

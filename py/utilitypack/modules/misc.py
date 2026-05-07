@@ -1098,8 +1098,13 @@ class Stream[T](typing.Iterable[T]):
 
         @dataclasses.dataclass
         class toMap[K, V](BaseCollector[dict[K, V]]):
-            predK: typing.Callable[[T], K]
-            predV: typing.Callable[[T], V]
+            ''' supports default predK and predV as taking tuple[K, V]'''
+            predK: typing.Callable[[T], K] = None
+            predV: typing.Callable[[T], V] = None
+
+            def __post_init__(self):
+                self.predK = self.predK or (lambda k, v: k)
+                self.predV = self.predV or (lambda k, v: v)
 
             def __call__(self, it):
                 return Stream(it).to_map(self.predK, self.predV)
