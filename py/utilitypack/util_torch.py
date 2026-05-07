@@ -439,30 +439,52 @@ class trainpipe:
             )
             self.setOptimizer(optimizer)
         assert self.optimizer
-        ps = perf_statistic()
+        ps_train = perf_statistic()
+        ps_iter = perf_statistic()
         for ep in range(epoch_start, epochnum):
             print(f"Epoch {ep} / {epochnum}")
             print("-------------------------------")
             # train
+            ps_iter.start()
             for batch, datatuple in enumerate(dataloader):
-                ps.start()
+                ps_train.start()
                 loss = self.optimize_with_data(datatuple)
-                ps.stop().countcycle()
+                ps_train.stop().countcycle()
+                ps_iter.countcycle()
                 if batch % outputperbatchnum == 0:
-                    self.report_train_progress(ps, batch, len(dataloader), loss.item())
+                    self.report_train_progress(
+                        self.TrainProgressInfo(
+                            ps_train.aveTime(),
+                            ps_iter.aveTime(),
+                            batch,
+                            len(dataloader),
+                            ep,
+                            loss.item(),
+                        )
+                    )
+                    ps_train.restart()
+                    ps_iter.restart()
+            ps_iter.stop().clear()
             self.on_epoch_finish(ep, epochnum)
 
         # win32api.Beep(1000, 1000)
         print("Done!")
 
-    def report_train_progress(self, ps, batch, batch_per_epoch, loss):
+    @dataclasses.dataclass
+    class TrainProgressInfo:
+        train_time_avg: float
+        iter_time_avg: float
+        batch: int
+        batch_per_epoch: int
+        epoch: int
+        loss_cur: float
+
+    def report_train_progress(self, info: TrainProgressInfo):
         print(f"Time: {GetTimeString()}")
-        print(f"Batch {batch} / {batch_per_epoch}")
-        print(f"Training speed: {ps.aveTime():>5f} s/batch")
-        ps.clear()
-        fltloss = loss
-        print(f"Instant loss: {fltloss:>7f}")
-        return fltloss
+        print(f"Batch {info.batch} / {info.batch_per_epoch}")
+        print(f"Training speed: {info.train_time_avg:>5f} s/batch")
+        print(f"Iter speed: {info.iter_time_avg:>5f} s/batch")
+        print(f"Instant loss: {info.loss_cur:>7f}")
 
     def optimize_with_data(self, datatuple):
         loss = self.calcloss(datatuple)

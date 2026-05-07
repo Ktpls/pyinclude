@@ -83,6 +83,9 @@ class perf_statistic:
         self._singled.start()
         return self
 
+    def restart(self):
+        return self.clear().start()
+
     def countcycle(self):
         self._cycle += 1
         return self
