@@ -16,7 +16,7 @@ import typing
 
 
 def getTorchDevice():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     return device
 
 
@@ -1096,6 +1096,9 @@ class RoPE(torch.nn.Module):
         self.maxlen = maxlen
         self.base = base
         cos, sin = self._getEmbCoeff()
+        self.register_pe(cos, sin)
+
+    def register_pe(self, cos, sin):
         self.register_buffer("cos", cos, persistent=False)
         self.cos: torch.Tensor
         self.register_buffer("sin", sin, persistent=False)
