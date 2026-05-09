@@ -1087,7 +1087,7 @@ class MnTransformerBlock(torch.nn.Module):
 
 
 class RoPE(torch.nn.Module):
-    def __init__(self, dim: int, maxlen=64, base=10000):
+    def __init__(self, dim: int, maxlen=64, base=10000, persist: bool = False):
         """
         dim: embedding dimension per HEAD!!! not total embedding dimension
         """
@@ -1095,13 +1095,14 @@ class RoPE(torch.nn.Module):
         self.dim = dim
         self.maxlen = maxlen
         self.base = base
+        self.persist = persist
         cos, sin = self._getEmbCoeff()
-        self.register_pe(cos, sin)
+        self.register_pe(cos, sin, persist)
 
-    def register_pe(self, cos, sin):
-        self.register_buffer("cos", cos, persistent=False)
+    def register_pe(self, cos, sin, persist):
+        self.register_buffer("cos", cos, persistent=persist)
         self.cos: torch.Tensor
-        self.register_buffer("sin", sin, persistent=False)
+        self.register_buffer("sin", sin, persistent=persist)
         self.sin: torch.Tensor
 
     def _getEmbCoeff(self):
