@@ -203,6 +203,41 @@ class FSMUtil:
         def movPrev(self):
             return self.it.movPrev()
 
+    def FlowTokenizer(
+        str_stream: typing.Iterable[str], matchers: list[FSMUtil.TokenMatcher]
+    ):
+        buf = ""
+        poscur = 0
+        for delta_str in str_stream:
+            buf += delta_str
+            match_fails_for_stream_unfinished = False
+            for matcher in matchers:
+                m = matcher.tryMatch(buf, poscur)
+                if m is not None:
+                    if m.end != len(buf):
+                        poscur = m.end
+                        yield m
+                        break
+                    else:
+                        match_fails_for_stream_unfinished = True
+            else:
+                if not match_fails_for_stream_unfinished:
+                    raise FSMUtil.ParseError(
+                        f"unparsable token at {poscur}: {buf[poscur:]}"
+                    )
+        # cleaning
+        while True:
+            # going to yield eos anyway
+            for matcher in matchers:
+                m = matcher.tryMatch(buf, poscur)
+                if m is not None:
+                    poscur = m.end
+                    yield m
+                    break
+            else:
+                raise FSMUtil.ParseError(
+                    f"unparsable token at {poscur}: {buf[poscur:]}"
+                )
 
 class UrlFullResolution(LazyLoading):
 
