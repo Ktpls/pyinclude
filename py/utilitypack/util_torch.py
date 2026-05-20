@@ -970,7 +970,8 @@ class MnTransformerBlock(torch.nn.Module):
         ffn_dim: int,
         num_head_q: int,
         num_head_kv: int = None,
-        dropout_attn=0.1,
+        dropout_attn_weight=0.0,
+        dropout_attn_output=0.1,
         dropout_ffn=0.1,
         prelayer_norm: bool = True,
         bias: bool = False,
@@ -988,7 +989,6 @@ class MnTransformerBlock(torch.nn.Module):
         assert num_head_q % num_head_kv == 0
         self.atte_dim_per_head = self.atte_dim // num_head_q
         self.v_dim_per_head = self.atte_dim_per_head
-        self.dropout_attn = dropout_attn
         self.enable_gqa = num_head_q != num_head_kv
         self.prelayer_norm = prelayer_norm
         self.q = torch.nn.Linear(
@@ -1006,7 +1006,8 @@ class MnTransformerBlock(torch.nn.Module):
         self.ffn = self.get_linear(in_dim, ffn_dim, self.out_dim)
         self.norm_ffn = self.get_norm(in_dim)
         self.norm_atte = self.get_norm(in_dim)
-        self.dropout_proj = torch.nn.Dropout(dropout_attn)
+        self.dropout_attn_weight = dropout_attn_weight
+        self.dropout_attn_output = torch.nn.Dropout(dropout_attn_output)
         self.dropout_ffn = torch.nn.Dropout(dropout_ffn)
 
     def get_linear(self, in_dim, ffn_dim, out_dim):
@@ -1058,14 +1059,14 @@ class MnTransformerBlock(torch.nn.Module):
                 k,
                 v,
                 attn_mask=attn_mask,
-                dropout_p=self.dropout_attn if self.training else 0,
+                dropout_p=self.dropout_attn_weight if self.training else 0,
                 enable_gqa=self.enable_gqa,
                 is_causal=is_causal,
             )
             .permute(0, 2, 1, 3)
             .reshape(B, N, self.v_dim_per_head * self.num_head_q)
         )
-        o = self.dropout_proj(self.o(r))
+        o = self.dropout_attn_output(self.o(r))
         return o
 
     def forward(self, x: torch.Tensor, attn_mask=None, is_causal=False):
