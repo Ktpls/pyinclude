@@ -1005,11 +1005,13 @@ class Stream[T](typing.Iterable[T]):
                 for i in stream:
                     ...
 
+        @dataclasses.dataclass
         class Reducer(BaseCollector[T]):
             func: typing.Callable[[T, T], T]
+            initial: T = None
 
             def __call__(self, iterable: typing.Iterable[T]):
-                return Stream(iterable).reduce(self.func)
+                return Stream(iterable).reduce(func=self.func, initial=self.initial)
 
         class OneByOneCollector[R](BaseCollector[R]):
             func: typing.Callable[[typing.Self, R, T], R]
@@ -1098,7 +1100,8 @@ class Stream[T](typing.Iterable[T]):
 
         @dataclasses.dataclass
         class toMap[K, V](BaseCollector[dict[K, V]]):
-            ''' supports default predK and predV as taking tuple[K, V]'''
+            """supports default predK and predV as taking tuple[K, V]"""
+
             predK: typing.Callable[[T], K] = None
             predV: typing.Callable[[T], V] = None
 
