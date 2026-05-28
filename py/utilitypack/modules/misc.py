@@ -1671,6 +1671,10 @@ class Stream[T](typing.Iterable[T]):
 
     to_map = to_dict
 
+    @typing.overload
+    def collect[R](self, collector: Stream.Collectors.BaseCollector[R]) -> R: ...
+    @typing.overload
+    def collect[R](self, func: typing.Callable[[typing.Iterable[T]], R]) -> R: ...
     def collect[R](self, func: typing.Callable[[typing.Iterable[T]], R]) -> R:
         """
         difference with reduce is that,
