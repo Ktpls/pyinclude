@@ -7,12 +7,14 @@ import re
 def AllFileIn(
     path,
     includeFileInSubDir=True,
+    includeFile=True,
     includeDir=False,
 ):
     for dirpath, dir, file in os.walk(path):
         if not includeFileInSubDir and dirpath != path:
             continue
-        yield from map(lambda f: os.path.join(dirpath, f), file)
+        if includeFile:
+            yield from map(lambda f: os.path.join(dirpath, f), file)
         if includeDir:
             yield from map(lambda f: os.path.join(dirpath, f), dir)
 
