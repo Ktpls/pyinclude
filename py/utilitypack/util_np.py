@@ -24,15 +24,60 @@ def forceviewmaxmin(m):
     pass
 
 
-def arrayshift(a, n, fill=np.nan):
-    # n positive as right
+def arrayshift(a: np.ndarray, n: int, axis: int = 0, fill=np.nan) -> np.ndarray:
+    """
+    将数组 a 沿指定轴 axis 移动 n 个位置，空出的位置用 fill 填充。
+
+    参数
+    ----------
+    a : np.ndarray
+        输入数组。
+    n : int
+        移动步数。正数表示向 axis 正方向移动（例如 1D 时向右），
+        负数表示向 axis 负方向移动（例如 1D 时向左）。
+    axis : int
+        移动所沿的轴，默认为 0。
+    fill : scalar
+        填充值，默认为 np.nan。
+
+    返回
+    -------
+    np.ndarray
+        移动并填充后的新数组，形状与 a 相同。
+
+    示例
+    --------
+    >>> arrayshift(np.array([0,1,2]), 1)
+    array([nan,  0.,  1.])
+    >>> arrayshift(np.array([0,1,2]), -1, fill=0)
+    array([1, 2, 0])
+    """
     if n == 0:
-        return a
-    elif n > 0:
-        # a[:-n] will not work as intended on n==0
-        return np.concatenate((np.full(n, fill), a[:-n]))
+        # 无移动，返回原数组的副本以避免意外修改
+        return a.copy()
+
+    # 创建一个形状与 a 相同、全部由 fill 填充的数组
+    result = np.full_like(a, fill)
+
+    # 根据 n 的正负，决定源数组和目标数组的切片位置
+    if n > 0:
+        # 正方向移动：目标数组从索引 n 开始接收数据
+        # 源数组取前 (length - n) 个元素
+        src_slice = [slice(None)] * a.ndim
+        dst_slice = [slice(None)] * a.ndim
+        src_slice[axis] = slice(None, -n)  # 等价于 a[..., :-n, ...]
+        dst_slice[axis] = slice(n, None)  # 等价于 result[..., n:, ...]
+        result[tuple(dst_slice)] = a[tuple(src_slice)]
     else:
-        return np.concatenate((a[-n:], np.full(-n, fill)))
+        # 负方向移动（n < 0）
+        n_abs = -n
+        src_slice = [slice(None)] * a.ndim
+        dst_slice = [slice(None)] * a.ndim
+        src_slice[axis] = slice(n_abs, None)  # 等价于 a[..., n_abs:, ...]
+        dst_slice[axis] = slice(None, -n_abs)  # 等价于 result[..., :-n_abs, ...]
+        result[tuple(dst_slice)] = a[tuple(src_slice)]
+
+    return result
 
 
 def integral(dx, x0, keepXM1=False):

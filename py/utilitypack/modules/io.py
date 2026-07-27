@@ -11,7 +11,7 @@ def AllFileIn(
     includeDir=False,
 ):
     for dirpath, dir, file in os.walk(path):
-        if not includeFileInSubDir and dirpath != path:
+        if not includeFileInSubDir and not os.path.samefile(dirpath, path):
             continue
         if includeFile:
             yield from map(lambda f: os.path.join(dirpath, f), file)

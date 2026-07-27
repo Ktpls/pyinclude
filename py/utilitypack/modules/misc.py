@@ -1841,11 +1841,16 @@ def SuccessOrNone[R](
 
 
 class CommitUnpressureizer:
-    def __init__(self, func: typing.Callable, interval=None):
+    def __init__(self, func: typing.Callable, interval=None, commit_on_close=True):
         self.func = func
         self.interval = interval
+        self.commit_on_close = commit_on_close
         self.count = 0
         self.lock = threading.Lock()
+
+    def __del__(self):
+        if self.commit_on_close and self.count != 0:
+            self.force_commit()
 
     def commit(self):
         commit = None
