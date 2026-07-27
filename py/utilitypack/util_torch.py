@@ -1145,3 +1145,9 @@ class RoPE2D(RoPE):
         r[..., 3::4] = x[..., 3::4] * cos[None, :W, :] + x[..., 2::4] * sin[None, :W, :]
         r = r.reshape(*shape)
         return r
+
+
+def hf_ckpt_any_to_resume(model_save_path: str):
+    if glob.glob(os.path.join(model_save_path, "checkpoint-*")):
+        return True
+    return False
