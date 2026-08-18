@@ -185,7 +185,7 @@ def load_state_dict_ignore_tensor_unmatched(
 
 
 def tensorimg2ndarray(m: torch.Tensor):
-    m = m.cpu().numpy()
+    m = m.float().cpu().numpy()
     if not len(m.shape) == 2:  # not single channeled
         m = np.moveaxis(m, -3, -1)
     return m
@@ -917,7 +917,7 @@ def tensor_contains_nan(x: torch.Tensor):
 
 
 def ImgTensor2NdarrayShowable(x: torch.Tensor):
-    return x.cpu().numpy().transpose(0, 2, 3, 1).squeeze()
+    return x.float().cpu().numpy().transpose(0, 2, 3, 1).squeeze()
 
 
 class PositionalEmbeddingSinusoidal(torch.nn.Module):
