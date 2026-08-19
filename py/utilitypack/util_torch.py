@@ -22,7 +22,10 @@ def getTorchDevice():
 
 
 def getCalcDtype():
-    return torch.bfloat16 if torch.cuda.is_available() else torch.float32
+    if torch.cuda.is_available():
+        if torch.cuda.is_bf16_supported():
+            return torch.bfloat16
+    torch.float32
 
 
 def getDeviceInfo():
