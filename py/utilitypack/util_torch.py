@@ -22,7 +22,10 @@ def getTorchDevice():
 
 
 def getCalcDtype():
-    return torch.bfloat16 if torch.cuda.is_available() else torch.float32
+    if torch.cuda.is_available():
+        if torch.cuda.is_bf16_supported():
+            return torch.bfloat16
+    torch.float32
 
 
 def getDeviceInfo():
@@ -185,7 +188,7 @@ def load_state_dict_ignore_tensor_unmatched(
 
 
 def tensorimg2ndarray(m: torch.Tensor):
-    m = m.cpu().numpy()
+    m = m.float().cpu().numpy()
     if not len(m.shape) == 2:  # not single channeled
         m = np.moveaxis(m, -3, -1)
     return m
@@ -917,7 +920,7 @@ def tensor_contains_nan(x: torch.Tensor):
 
 
 def ImgTensor2NdarrayShowable(x: torch.Tensor):
-    return x.cpu().numpy().transpose(0, 2, 3, 1).squeeze()
+    return x.float().cpu().numpy().transpose(0, 2, 3, 1).squeeze()
 
 
 class PositionalEmbeddingSinusoidal(torch.nn.Module):
