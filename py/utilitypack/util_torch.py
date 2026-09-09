@@ -1158,3 +1158,31 @@ def hf_ckpt_any_to_resume(model_save_path: str):
     if glob.glob(os.path.join(model_save_path, "checkpoint-*")):
         return True
     return False
+
+
+def mle(
+    mu: torch.Tensor, logvar: torch.Tensor, pred: torch.Tensor, add_const: bool = False
+):
+    """
+    计算高斯分布下观测值 pred 的对数似然（极大似然估计）。
+
+    参数：
+        mu (torch.Tensor): 预测分布的均值，形状 (batch_size, ...)
+        logvar (torch.Tensor): 预测分布的对数方差，形状 (batch_size, ...)
+        pred (torch.Tensor): 观测值（真实数据），形状 (batch_size, ...)
+        add_const (bool): 是否添加常数项 -0.5 * log(2π)。默认为 False，
+                          通常优化时可忽略该常数项。
+
+    返回：
+        torch.Tensor: 每个样本的联合对数似然，形状 (batch_size,)
+                      即对除 batch 维度外的所有维度求和。
+    """
+    diff = pred - mu
+    var = torch.exp(logvar)
+    # 逐元素对数似然：-0.5 * (logvar + (diff^2) / var)
+    log_likelihood = -0.5 * (logvar + diff.pow(2) / var)
+
+    if add_const:
+        log_likelihood -= 0.5 * np.log(2 * np.pi)
+
+    return log_likelihood
