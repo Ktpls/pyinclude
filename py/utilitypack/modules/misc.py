@@ -1041,20 +1041,26 @@ class Stream[T](typing.Iterable[T]):
                 return val
 
         @dataclasses.dataclass
-        class join(BaseCollector):
+        class join(BaseCollector[str]):
             separator: str = ""
 
             def __call__(self, stream):
                 return self.separator.join(stream)
 
-        class ndarray(BaseCollector):
-            def __call__(self, stream):
-                import numpy as np
+        try:
+            import numpy as np
 
-                return np.array(list(stream))
+            class ndarray(BaseCollector[np.ndarray]):
+                def __call__(self, stream):
+                    import numpy as np
+
+                    return np.array(list(stream))
+
+        except ImportError:
+            pass
 
         @dataclasses.dataclass
-        class fork(BaseCollector):
+        class fork(BaseCollector[T]):
             n: int
 
             def __call__(self, stream):
