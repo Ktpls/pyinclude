@@ -1160,7 +1160,7 @@ def hf_ckpt_any_to_resume(model_save_path: str):
     return False
 
 
-def mle(
+def maximum_likelihood_estimation(
     mu: torch.Tensor, logvar: torch.Tensor, pred: torch.Tensor, add_const: bool = False
 ):
     """
