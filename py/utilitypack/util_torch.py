@@ -17,15 +17,18 @@ import glob
 
 
 def getTorchDevice():
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    return device
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.xpu.is_available():
+        return torch.device("xpu")
+    return torch.device("cpu")
 
 
 def getCalcDtype():
     if torch.cuda.is_available():
-        if torch.cuda.is_bf16_supported():
+        if torch.cuda.is_bf16_supported(including_emulation=False):
             return torch.bfloat16
-    torch.float32
+    return torch.float32
 
 
 def getDeviceInfo():
