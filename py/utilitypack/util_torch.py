@@ -1150,9 +1150,9 @@ class RoPE2D(RoPE):
         x = x.reshape(-1, H, W, E)
         r = torch.zeros_like(x)
         r[..., 0::4] = x[..., 0::4] * cos[:H, None, :] - x[..., 1::4] * sin[:H, None, :]
-        r[..., 1::4] = x[..., 1::4] * cos[:H, None, :] + x[..., 0::4] * sin[:H, None, :]
+        r[..., 1::4] = x[..., 0::4] * sin[:H, None, :] + x[..., 1::4] * cos[:H, None, :]
         r[..., 2::4] = x[..., 2::4] * cos[None, :W, :] - x[..., 3::4] * sin[None, :W, :]
-        r[..., 3::4] = x[..., 3::4] * cos[None, :W, :] + x[..., 2::4] * sin[None, :W, :]
+        r[..., 3::4] = x[..., 2::4] * sin[None, :W, :] + x[..., 3::4] * cos[None, :W, :]
         r = r.reshape(*shape)
         return r
 
