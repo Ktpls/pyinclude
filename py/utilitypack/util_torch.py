@@ -1164,26 +1164,25 @@ def hf_ckpt_any_to_resume(model_save_path: str):
 
 
 def maximum_likelihood_estimation(
-    mu: torch.Tensor, logvar: torch.Tensor, pred: torch.Tensor, add_const: bool = False
+    mu: torch.Tensor, logvar: torch.Tensor, gt: torch.Tensor, add_const: bool = False
 ):
     """
     计算高斯分布下观测值 pred 的对数似然（极大似然估计）。
 
     参数：
-        mu (torch.Tensor): 预测分布的均值，形状 (batch_size, ...)
-        logvar (torch.Tensor): 预测分布的对数方差，形状 (batch_size, ...)
-        pred (torch.Tensor): 观测值（真实数据），形状 (batch_size, ...)
+        mu (torch.Tensor): 预测分布的均值，形状 (..., N)
+        logvar (torch.Tensor): 预测分布的对数方差，形状 (..., N)
+        gt (torch.Tensor): 观测值（真实数据），形状 (..., N)
         add_const (bool): 是否添加常数项 -0.5 * log(2π)。默认为 False，
                           通常优化时可忽略该常数项。
 
     返回：
-        torch.Tensor: 每个样本的联合对数似然，形状 (batch_size,)
-                      即对除 batch 维度外的所有维度求和。
+        torch.Tensor: 逐元素对数似然，形状 (..., N)。
     """
-    diff = pred - mu
+    diff = gt - mu
     var = torch.exp(logvar)
-    # 逐元素对数似然：-0.5 * (logvar + (diff^2) / var)
-    log_likelihood = -0.5 * (logvar + diff.pow(2) / var)
+    # 逐元素对数似然
+    log_likelihood = -0.5 * (logvar + diff.pow(2) * torch.exp(-logvar))
 
     if add_const:
         log_likelihood -= 0.5 * np.log(2 * np.pi)

@@ -34,9 +34,9 @@ class OneLineInputCmdScript:
                 linput.append(line)
             yield "\n".join(linput)
 
-    def serve(self, input_loop_impl: typing.Generator[str, None, None] = InputLoop()):
+    def serve(self, input_src: typing.Generator[str, None, None] = InputLoop()):
         def new_f(foo: typing.Callable[[str], typing.Any]):
-            for arg in OneLineInputCmdScript.InputCmdIfPresentedOrElse(input_loop_impl):
+            for arg in OneLineInputCmdScript.InputCmdIfPresentedOrElse(input_src):
                 try:
                     foo(arg)
                 except Exception as e:
