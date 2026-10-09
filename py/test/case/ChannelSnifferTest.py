@@ -1,4 +1,4 @@
-from test.autotest_common import *
+from test.case.autotest_common import *
 from unittest.mock import patch
 
 

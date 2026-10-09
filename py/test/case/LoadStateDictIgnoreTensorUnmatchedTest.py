@@ -1,4 +1,4 @@
-from test.autotest_common import *
+from test.case.autotest_common import *
 from utilitypack.util_torch import torch, load_state_dict_ignore_tensor_unmatched
 
 
