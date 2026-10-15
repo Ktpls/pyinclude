@@ -1213,7 +1213,7 @@ class Stream[T](typing.Iterable[T]):
 
                 @functools.wraps(pred)
                 async def pred_dealing_with_tuple_async_form[*Ts](x: tuple[*Ts]):
-                    assert isinstance(x, tuple)
+                    assert isinstance(x, tuple), f'{x} is not a tuple that able to be unpacked.'
                     return await pred_dealing_with_unpackeds(*x)
 
                 pred = pred_dealing_with_tuple_async_form
@@ -1231,7 +1231,7 @@ class Stream[T](typing.Iterable[T]):
 
             @functools.wraps(pred)
             def pred_dealing_with_tuple[*Ts](x: tuple[*Ts]):
-                assert isinstance(x, tuple)
+                assert isinstance(x, tuple), f'{x} is not a tuple that able to be unpacked.'
                 return pred_dealing_with_unpackeds(*x)
 
             pred = pred_dealing_with_tuple
