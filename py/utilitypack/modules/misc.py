@@ -1837,13 +1837,13 @@ class GSLogger:
         return f2
 
 
-def SuccessOrNone[R](
-    f: typing.Callable[[], R], retOnFailure=None
+def SuccessOrDefault[R](
+    f: typing.Callable[[], R], default=None
 ) -> typing.Optional[R]:
     try:
         return f()
     except:
-        return retOnFailure
+        return default
 
 
 class CommitUnpressureizer:
